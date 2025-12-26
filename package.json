@@ -1,4 +1,3 @@
-
 {
   "name": "ats-master",
   "private": true,
@@ -10,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^0.2.1",
+    "@google/generative-ai": "^0.21.0",
     "pdfjs-dist": "5.4.449",
     "docx": "^9.5.1",
     "file-saver": "^2.0.5",
@@ -35,3 +34,4 @@
     "vite": "^6.0.5"
   }
 }
+
