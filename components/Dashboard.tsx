@@ -14,8 +14,7 @@ import {
   ShieldCheck,
   TrendingUp,
   Award,
-  FilePlus2,
-  LayoutTemplate
+  FilePlus2
 } from 'lucide-react';
 
 interface DashboardProps {
@@ -26,42 +25,30 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatch, onNewScan }) => {
+  // حماية إضافية للبيانات المستلمة
   const metrics = result?.metrics || { totalBulletPoints: 0, bulletsWithMetrics: 0, weakVerbsCount: 0, sectionCount: 0 };
-  const flags = result?.parsingFlags || { isGraphic: false, hasColumns: false, hasTables: false, hasStandardSectionHeaders: true, contactInfoInHeader: false };
   
-  // توليد رسائل الأخطاء القاتلة بناءً على الـ Flags
-  const criticalErrorsList: string[] = [];
-  if (flags.hasColumns) criticalErrorsList.push("تنبيه قاتل: تم اكتشاف أعمدة (Columns). أنظمة ATS القديمة لا تقرأ النصوص الموزعة في أعمدة بشكل صحيح.");
-  if (flags.hasTables) criticalErrorsList.push("تنبيه قاتل: تم اكتشاف جداول (Tables). المحتوى داخل الجداول غالباً ما يتم تجاهله.");
-  if (flags.isGraphic) criticalErrorsList.push("تنبيه قاتل: السيرة الذاتية تعتمد على الصور (Graphic Resume) وليست نصية.");
-  if (flags.contactInfoInHeader) criticalErrorsList.push("معلومات الاتصال موجودة في الـ Header/Footer، مما قد يجعل الروبوت يفشل في قراءتها.");
-  if (!flags.hasStandardSectionHeaders) criticalErrorsList.push("عناوين الأقسام غير قياسية (مثل 'My Journey' بدلاً من 'Experience').");
-
-  // دمج الأخطاء النصية القادمة من الباك إند (إن وجدت) مع القائمة المولدة
-  const allCriticalErrors = [...criticalErrorsList, ...(result?.criticalErrors || [])];
-
   const metricRatio = (metrics?.totalBulletPoints || 0) > 0 
     ? ((metrics?.bulletsWithMetrics || 0) / (metrics?.totalBulletPoints || 1)) * 100 
     : 0;
 
   const score = result?.overallScore || 0;
-  const isCritical = score < 50;
-  const isExcellent = score >= 80;
+  const isCritical = score < 35;
+  const isExcellent = score >= 75;
 
   return (
     <div className="space-y-8 pb-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      
-      {/* Header Section */}
+      {/* Forensic Verdict Header */}
       <div className="grid md:grid-cols-4 gap-6">
         <div className="md:col-span-1 bg-slate-900 p-8 rounded-[2.5rem] shadow-2xl border border-indigo-500/30 flex flex-col items-center justify-center relative overflow-hidden group">
           <div className="absolute inset-0 bg-indigo-500/5 group-hover:bg-indigo-500/10 transition-colors" />
-          <ScoreGauge score={score} label="ATS Compliance" size={180} />
+          <ScoreGauge score={score} label="ATS Compliance Index" size={180} />
           <div className="mt-6 text-center z-10">
             <div className="flex items-center gap-1 justify-center text-[10px] text-indigo-400 font-black uppercase tracking-[0.2em] mb-1">
-              <ShieldCheck size={12} /> Strict Mode Active
+              <ShieldCheck size={12} /> Forensic V4.5 Balanced
             </div>
             <div className={`text-sm font-bold ${isCritical ? 'text-rose-400' : isExcellent ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {isCritical ? 'مرفوض تقنياً' : isExcellent ? 'جاهز للمنافسة' : 'يحتاج تحسينات'}
+              {isCritical ? 'فحص دقيق: يحتاج تحسين' : isExcellent ? 'جاهزية تامة للتوظيف' : 'نتيجة تنافسية'}
             </div>
           </div>
         </div>
@@ -70,7 +57,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
           <div>
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2 text-indigo-600 font-black text-xs uppercase tracking-widest">
-                <Binary size={14} /> PROPHET ENGINE V5.0
+                <Binary size={14} /> PROPHET V4.5 - BALANCED AUDIT LOGIC
               </div>
               <button 
                 onClick={onNewScan}
@@ -80,17 +67,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               </button>
             </div>
             <h2 className="text-2xl font-black text-slate-800 leading-tight mb-4 italic">
-              "{result?.summaryFeedback || "تحليل شامل للهيكلية والمحتوى."}"
+              "{result?.summaryFeedback || "لم يتم توفير ملخص للتحليل."}"
             </h2>
             <div className="flex flex-wrap gap-4 mt-8">
               <div className="bg-slate-50 px-6 py-4 rounded-2xl border border-slate-100">
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">المسمى الوظيفي (الهيدر)</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">الدور الوظيفي المكتشف</p>
                 <p className="text-lg font-black text-slate-800 flex items-center gap-2">
                   <Target size={18} className="text-indigo-500" /> {result?.detectedRole || "غير محدد"}
                 </p>
               </div>
               <div className="bg-indigo-50 px-6 py-4 rounded-2xl border border-indigo-100">
-                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">نسبة الأرقام</p>
+                <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">كثافة الإنجازات</p>
                 <p className="text-lg font-black text-slate-800 flex items-center gap-2">
                   <TrendingUp size={18} className="text-indigo-500" /> {Math.round(metricRatio)}%
                 </p>
@@ -103,92 +90,86 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               onClick={onEdit}
               className="flex-1 py-4 bg-indigo-600 text-white rounded-[1.5rem] font-black hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-100 flex items-center justify-center gap-3 active:scale-[0.98]"
             >
-              <Edit3 size={18} /> تحسين الصياغة (AI Rewrite)
+              <Edit3 size={18} /> تحسين محتوى الأقسام
             </button>
             <button 
               onClick={onOpenMatch}
               className="flex-1 py-4 bg-white border-2 border-slate-200 text-slate-700 rounded-[1.5rem] font-black hover:border-indigo-600 hover:text-indigo-600 transition-all active:scale-[0.98]"
             >
-              مطابقة مع وصف وظيفة (Job Match)
+              مطابقة مع وصف وظيفة
             </button>
           </div>
         </div>
       </div>
 
-      {/* Logic Explanation Section */}
-      <div className="bg-slate-50 border border-slate-200 rounded-[2rem] p-8">
+      {/* Logic Explained - Balanced Version */}
+      <div className="bg-indigo-50 border border-indigo-100 rounded-[2rem] p-8">
         <div className="flex items-center gap-3 mb-6">
-          <Award className="text-slate-600" size={20} />
-          <h3 className="text-lg font-black text-slate-800">معايير التقييم الصارم (Strict Scoring Logic)</h3>
+          <Award className="text-indigo-600" size={20} />
+          <h3 className="text-lg font-black text-slate-800">كيف يتم احتساب درجتك؟ (النظام العالمي المتوازن)</h3>
         </div>
         <div className="grid md:grid-cols-4 gap-6">
           <div className="space-y-2">
-            <p className="text-xs font-black text-slate-500 uppercase">1. السلامة التقنية (Fatal Checks)</p>
+            <p className="text-xs font-black text-slate-500 uppercase">1. هيكل السيرة (25%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div className={`h-full ${allCriticalErrors.length > 0 ? 'bg-rose-500' : 'bg-emerald-500'}`} style={{ width: '100%' }}></div>
+              <div className="h-full bg-indigo-500" style={{ width: '100%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">خلو الملف من الجداول، الأعمدة، والصور.</p>
+            <p className="text-[10px] text-slate-400">تحصل على نقاط فورية عند وجود الأقسام الأساسية.</p>
           </div>
           <div className="space-y-2">
-            <p className="text-xs font-black text-slate-500 uppercase">2. لغة الأرقام (Impact)</p>
+            <p className="text-xs font-black text-slate-500 uppercase">2. المهارات (30%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500" style={{ width: '40%' }}></div>
+              <div className="h-full bg-indigo-500" style={{ width: '80%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">نسبة الإنجازات الرقمية في نقاط الخبرة.</p>
+            <p className="text-[10px] text-slate-400">نقاط تراكمية بناءً على تنوع الكلمات المفتاحية التقنية.</p>
           </div>
           <div className="space-y-2">
-            <p className="text-xs font-black text-slate-500 uppercase">3. المهارات (Skills)</p>
+            <p className="text-xs font-black text-slate-500 uppercase">3. لغة الأرقام (30%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500" style={{ width: '30%' }}></div>
+              <div className="h-full bg-indigo-500" style={{ width: '60%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">تنوع المهارات التقنية والكلمات المفتاحية.</p>
+            <p className="text-[10px] text-slate-400">أقوى معيار؛ هل وصفت إنجازاتك بأرقام ونسب مئوية؟</p>
           </div>
           <div className="space-y-2">
-            <p className="text-xs font-black text-slate-500 uppercase">4. الهيكل (Structure)</p>
+            <p className="text-xs font-black text-slate-500 uppercase">4. التنسيق الفني (15%)</p>
             <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-full bg-indigo-500" style={{ width: '20%' }}></div>
+              <div className="h-full bg-indigo-500" style={{ width: '90%' }}></div>
             </div>
-            <p className="text-[10px] text-slate-400">وجود الأقسام القياسية (Education, Experience).</p>
+            <p className="text-[10px] text-slate-400">درجة خلو الملف من الأخطاء التي تعيق القارئ الآلي.</p>
           </div>
         </div>
       </div>
 
       <div className="grid md:grid-cols-3 gap-8">
-        
-        {/* Compliance & Errors Section - Most Critical */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col md:col-span-1">
+        {/* Keywords */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <ShieldAlert size={16} /> فحص الأخطاء (Fatal Errors)
+            <FileSearch size={16} /> المهارات المستخرجة
           </h3>
-          <div className="space-y-4 flex-1">
-            {allCriticalErrors.length > 0 ? (
-              allCriticalErrors.map((err, i) => (
-                <div key={i} className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-100 animate-in slide-in-from-left-2">
-                  <AlertOctagon className="text-rose-600 shrink-0 mt-0.5" size={16} />
-                  <p className="text-xs font-bold text-rose-900 leading-snug">{err}</p>
-                </div>
-              ))
-            ) : (
-              <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                <CheckCircle2 className="text-emerald-600 shrink-0" size={16} />
-                <p className="text-xs font-bold text-emerald-900">الملف سليم تقنياً (No Fatal Errors)</p>
+          <div className="space-y-6 flex-1">
+            <div>
+              <p className="text-[10px] font-black text-emerald-500 uppercase mb-3 tracking-tighter">موجود في سيرتك</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(result?.hardSkillsFound || []).slice(0, 12).map((s, i) => (
+                  <span key={i} className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-100">{s}</span>
+                ))}
               </div>
-            )}
-
-            {/* Formatting Issues (Minor) */}
-            {(result?.formattingIssues || []).map((issue, i) => (
-              <div key={i} className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
-                <Zap className="text-amber-600 shrink-0 mt-0.5" size={16} />
-                <p className="text-xs font-bold text-amber-900 leading-snug">{issue}</p>
+            </div>
+            <div className="pt-6 border-t border-slate-50">
+              <p className="text-[10px] font-black text-indigo-500 uppercase mb-3 tracking-tighter">ننصح بإضافتها (لزيادة الدرجة)</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(result?.missingHardSkills || []).map((s, i) => (
+                  <span key={i} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">{s}</span>
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
 
-        {/* Metrics Section */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col md:col-span-1">
+        {/* Metrics */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <Activity size={16} /> قوة المحتوى
+            <Activity size={16} /> التدقيق الرقمي
           </h3>
           <div className="flex flex-col items-center justify-center flex-1">
             <div className="relative mb-6">
@@ -209,46 +190,45 @@ export const Dashboard: React.FC<DashboardProps> = ({ result, onEdit, onOpenMatc
               </div>
             </div>
             <div className="w-full space-y-3">
-              <MetricItem label="إجمالي النقاط" value={metrics?.totalBulletPoints || 0} />
-              <MetricItem label="نقاط بأرقام" value={metrics?.bulletsWithMetrics || 0} color="text-emerald-600" />
-              <MetricItem label="عدد الأقسام" value={metrics?.sectionCount || 0} />
+              <MetricItem label="نقاط الوصف" value={metrics?.totalBulletPoints || 0} />
+              <MetricItem label="جمل قوية (بأرقام)" value={metrics?.bulletsWithMetrics || 0} color="text-emerald-600" />
+              <MetricItem label="أفعال ضعيفة" value={metrics?.weakVerbsCount || 0} color="text-rose-600" />
             </div>
           </div>
         </div>
 
-        {/* Keywords Section */}
-        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col md:col-span-1">
+        {/* Compliance */}
+        <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm flex flex-col">
           <h3 className="text-sm font-black text-slate-400 uppercase tracking-widest mb-6 flex items-center gap-2">
-            <FileSearch size={16} /> المهارات المكتشفة
+            <ShieldAlert size={16} /> معوقات الـ ATS
           </h3>
-          <div className="space-y-6 flex-1">
-            <div>
-              <p className="text-[10px] font-black text-emerald-500 uppercase mb-3 tracking-tighter">موجودة في الملف</p>
-              <div className="flex flex-wrap gap-1.5">
-                {(result?.hardSkillsFound || []).length > 0 ? (
-                  (result.hardSkillsFound).slice(0, 15).map((s, i) => (
-                    <span key={i} className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-lg border border-emerald-100">{s}</span>
-                  ))
-                ) : (
-                  <span className="text-xs text-slate-400 font-medium">لم يتم العثور على مهارات تقنية صريحة.</span>
-                )}
-              </div>
-            </div>
-
-            {/* Note: Missing skills are hidden in General Scan as requested */}
-            {(result?.missingHardSkills || []).length > 0 && (
-              <div className="pt-6 border-t border-slate-50">
-                <p className="text-[10px] font-black text-indigo-500 uppercase mb-3 tracking-tighter">ناقصة (بناءً على التوقع)</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {result.missingHardSkills.map((s, i) => (
-                    <span key={i} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 text-[10px] font-bold rounded-lg border border-indigo-100">{s}</span>
-                  ))}
+          <div className="space-y-4 flex-1">
+            {(result?.criticalErrors?.length > 0 || result?.formattingIssues?.length > 0) ? (
+              <>
+                {(result.criticalErrors || []).map((err, i) => (
+                  <div key={i} className="flex items-start gap-3 p-4 bg-rose-50 rounded-2xl border border-rose-100">
+                    <AlertOctagon className="text-rose-600 shrink-0 mt-0.5" size={16} />
+                    <p className="text-xs font-bold text-rose-900 leading-snug">{err}</p>
+                  </div>
+                ))}
+                {(result.formattingIssues || []).map((issue, i) => (
+                  <div key={i} className="flex items-start gap-3 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <Zap className="text-amber-600 shrink-0 mt-0.5" size={16} />
+                    <p className="text-xs font-bold text-amber-900 leading-snug">{issue}</p>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center p-8">
+                <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-4">
+                  <CheckCircle2 size={32} />
                 </div>
+                <p className="text-sm font-black text-slate-800 mb-1">تنسيق مثالي!</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-relaxed">سيرتك قابلة للقراءة تماماً من كافة الأنظمة.</p>
               </div>
             )}
           </div>
         </div>
-
       </div>
     </div>
   );

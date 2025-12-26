@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { ResumeSection, ImprovedContent } from '../types';
 import { Edit3, Sparkles, Download, ArrowLeft, Check, Loader2, X, RefreshCw, FileText, FileDown, Eye, Bold, List, Wand2, AlertTriangle } from 'lucide-react';
@@ -73,6 +72,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
   });
   const [activeSuggestions, setActiveSuggestions] = useState<Record<string, ImprovedContent | null>>({});
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [peekingIds, setPeekingIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setCurrentSections(sections);
@@ -202,6 +202,8 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
         {currentSections.map((section) => {
           const suggestion = activeSuggestions[section.id];
           const isLoading = loadingStates[section.id];
+          const isPeeking = peekingIds.has(section.id);
+          const displayContent = isPeeking && section.originalContent ? section.originalContent : section.content;
 
           return (
             <div key={section.id} className="relative group">
@@ -230,19 +232,22 @@ export const Editor: React.FC<EditorProps> = ({ sections, onBack }) => {
                         <div onClick={() => applyChoice(section.id, 'professional')} className="group/card flex flex-col p-8 rounded-[2.5rem] border-2 border-slate-100 bg-slate-50/50 hover:bg-white hover:border-indigo-500 hover:shadow-2xl transition-all cursor-pointer relative">
                           <span className="px-4 py-1.5 bg-indigo-100 text-indigo-700 text-[10px] font-black uppercase tracking-wider rounded-xl self-start mb-6">الخيار الاحترافي</span>
                           <div className="text-lg text-slate-700 leading-relaxed font-serif prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: suggestion.professional }} />
+                          <div className="absolute bottom-4 right-8 opacity-0 group-hover/card:opacity-100 transition-opacity text-indigo-600 font-black text-xs uppercase tracking-widest">اضغط للتطبيق</div>
                         </div>
                         <div onClick={() => applyChoice(section.id, 'atsOptimized')} className="group/card flex flex-col p-8 rounded-[2.5rem] border-2 border-slate-100 bg-emerald-50/30 hover:bg-white hover:border-emerald-500 hover:shadow-2xl transition-all cursor-pointer relative">
                           <span className="px-4 py-1.5 bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-wider rounded-xl self-start mb-6">تحسين الـ ATS</span>
                           <div className="text-lg text-slate-700 leading-relaxed font-serif prose prose-slate max-w-none" dangerouslySetInnerHTML={{ __html: suggestion.atsOptimized }} />
+                          <div className="absolute bottom-4 right-8 opacity-0 group-hover/card:opacity-100 transition-opacity text-emerald-600 font-black text-xs uppercase tracking-widest">اضغط للتطبيق</div>
                         </div>
                       </div>
                       <button onClick={() => setActiveSuggestions(prev => ({ ...prev, [section.id]: null }))} className="text-xs font-bold text-slate-400 hover:text-rose-500 mx-auto block py-2 px-6 rounded-full hover:bg-rose-50 transition-all">إلغاء الاقتراحات</button>
                     </div>
                   ) : (
                     <MiniRichEditor
-                      value={section.content}
+                      value={displayContent}
+                      readOnly={isPeeking}
                       onChange={(newVal) => handleUpdate(section.id, newVal)}
-                      className="text-slate-800"
+                      className={isPeeking ? 'text-slate-400' : 'text-slate-800'}
                     />
                   )}
                 </div>
