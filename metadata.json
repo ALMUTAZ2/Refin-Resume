@@ -1,0 +1,5 @@
+{
+  "name": "Copy of ATS Master:   model: gemini-2.0-flash-lite",
+  "description": "A high-performance platform to analyze, score, and optimize resumes for Applicant Tracking Systems (ATS) using Gemini AI. Build, edit, and export ATS-compliant resumes with real-time feedback.",
+  "requestFramePermissions": []
+}
