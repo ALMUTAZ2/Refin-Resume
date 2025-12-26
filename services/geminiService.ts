@@ -3,7 +3,7 @@ import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "
 
 export class GeminiService {
   private genAI: GoogleGenAI;
-    private readonly MODEL_NAME = 'gemini-2.0-flash-lite';
+    private readonly MODEL_NAME = 'gemini-1.5-flash';
 
       constructor() {
           const apiKey = (process.env as any).API_KEY;
