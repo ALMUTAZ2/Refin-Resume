@@ -5,62 +5,60 @@ export interface ResumeSection {
           originalContent?: string;
           }
 
-          // ✅ جديد: مؤشرات الأخطاء القاتلة والهيكلية
-          // نستخدم Boolean بدلاً من النصوص لضمان الدقة البرمجية
+          // ✅ هذا هو الانترفيس الجديد للأخطاء القاتلة
           export interface ParsingFlags {
-            isGraphic: boolean;               // هل السيرة عبارة عن صورة؟
-              hasColumns: boolean;              // هل يوجد تخطيط أعمدة؟ (خطأ قاتل)
-                hasTables: boolean;               // هل توجد جداول؟ (خطأ قاتل)
-                  hasStandardSectionHeaders: boolean; // هل العناوين قياسية؟ (Experience, Education...)
-                    contactInfoInHeader: boolean;     // هل معلومات الاتصال مخفية في الـ Header؟
+            isGraphic: boolean;
+              hasColumns: boolean;
+                hasTables: boolean;
+                  hasStandardSectionHeaders: boolean;
+                    contactInfoInHeader: boolean;
                     }
 
                     export interface AnalysisResult {
-                      detectedRole: string; // يتم تعبئته من أول عنوان وظيفي صريح تم العثور عليه
+                      detectedRole: string;
                         
-                          // ✅ الحقل الجديد للتحكم في الأخطاء القاتلة
+                          // ✅ ربط الأعلام (Flags) هنا
                             parsingFlags: ParsingFlags; 
 
                               hardSkillsFound: string[];
-                                missingHardSkills: string[]; // يبقى فارغاً في الفحص العام (General Scan)
+                                missingHardSkills: string[];
                                   softSkillsFound: string[];
                                     
                                       metrics: {
                                           totalBulletPoints: number;
                                               bulletsWithMetrics: number;
-                                                  weakVerbsCount: number; // تم تبسيط المنطق، قد يكون 0 في النسخة الحالية
+                                                  weakVerbsCount: number;
                                                       sectionCount: number;
                                                         };
                                                           
-                                                            formattingIssues: string[]; // أخطاء ثانوية نصية (مثل: تنسيق التاريخ غير موحد)
-                                                              criticalErrors: string[]; // يتم توليدها في الواجهة بناءً على parsingFlags
+                                                            formattingIssues: string[];
+                                                              criticalErrors: string[];
                                                                 
                                                                   strengths: string[];
                                                                     weaknesses: string[];
                                                                       summaryFeedback: string;
                                                                         structuredSections: ResumeSection[];
                                                                           
-                                                                            // يتم حسابه في Service/Frontend
-                                                                              overallScore?: number;
-                                                                              }
+                                                                            overallScore?: number;
+                                                                            }
 
-                                                                              export interface ImprovedContent {
-                                                                                professional: string;
-                                                                                  atsOptimized: string;
-                                                                                  }
+                                                                            export interface ImprovedContent {
+                                                                              professional: string;
+                                                                                atsOptimized: string;
+                                                                                }
 
-                                                                                  export interface JobMatchResult {
-                                                                                    matchPercentage: number;
-                                                                                      matchingKeywords: string[]; // يجمع المهارات الأساسية والثانوية للعرض
-                                                                                        missingKeywords: string[];  // يجمع المهارات الأساسية والثانوية المفقودة
-                                                                                          matchFeedback: string;
-                                                                                            tailoredSections?: ResumeSection[]; 
-                                                                                            }
+                                                                                export interface JobMatchResult {
+                                                                                  matchPercentage: number;
+                                                                                    matchingKeywords: string[];
+                                                                                      missingKeywords: string[];
+                                                                                        matchFeedback: string;
+                                                                                          tailoredSections?: ResumeSection[]; 
+                                                                                          }
 
-                                                                                            export enum AppStep {
-                                                                                              UPLOAD = 'UPLOAD',
-                                                                                                DASHBOARD = 'DASHBOARD',
-                                                                                                  EDITOR = 'EDITOR'
-                                                                                                  }
-                                                                                                  
+                                                                                          export enum AppStep {
+                                                                                            UPLOAD = 'UPLOAD',
+                                                                                              DASHBOARD = 'DASHBOARD',
+                                                                                                EDITOR = 'EDITOR'
+                                                                                                }
+                                                                                                
 }
