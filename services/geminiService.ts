@@ -6,8 +6,8 @@ export class GeminiService {
   private genAI: GoogleGenerativeAI;
   
   // ✅ الموديل 1.5 فلاش (المستقر)
-  private readonly MODEL_NAME = 'gemini-1.5-flash';
-
+  private readonly MODEL_NAME = 'gemini-1.5-flash-001';
+ 
   constructor() {
     const apiKey = (process.env as any).API_KEY;
     if (!apiKey || apiKey.includes("---") || apiKey.length < 10) {
