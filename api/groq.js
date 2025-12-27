@@ -6,7 +6,9 @@ const groq = new Groq({
 
 const MODEL_NAME = 'llama-3.3-70b-versatile';
 
-// 1. Helpers
+// ==========================================
+// 🛠️ Helpers
+// ==========================================
 function cleanAndParseJSON(text) {
   if (!text) return {};
   try {
@@ -54,38 +56,38 @@ function calculateATSScore(data) {
   return Math.round(Math.min(100, impactScore + skillsScore + structurePoints + formattingScore - penalty));
 }
 
-// ============================================================
-// 🧠 Logic: Smart Word Count Distributor (500-700 Words)
-// ============================================================
+// ==========================================
+// 🧠 Logic: Strict Word Controller (500-700 Limit)
+// ==========================================
 async function handleSmartBulkImprove(sections) {
-  // 1. حساب عدد الكلمات الحالي
+  // 1. حساب الكلمات الحالية
   const currentTotalWords = sections.reduce((acc, s) => acc + s.content.trim().split(/\s+/).length, 0);
   
-  // 2. تحديد الهدف (Target) والاستراتيجية
-  let targetTotalWords = 650; // الهدف المثالي (وسط بين 500 و 700)
+  // 2. تحديد الهدف والاستراتيجية (بناءً على مشكلة الـ 1500 كلمة)
+  let targetTotalWords = 600; // الهدف الذهبي
   let strategy = "OPTIMIZE";
 
-  if (currentTotalWords < 350) { 
-    // إذا النص قصير جداً، نجبره على التوسع بقوة
-    targetTotalWords = 650; 
-    strategy = "EXPAND SIGNIFICANTLY. Use 'Star Method'. Add detailed professional descriptions. Elaborate on every point to increase word count."; 
+  if (currentTotalWords < 300) { 
+    // توسيع بحذر
+    targetTotalWords = 600; 
+    strategy = "EXPAND slightly. Focus on quality not quantity."; 
   } 
-  else if (currentTotalWords > 900) { 
-    targetTotalWords = 750; 
-    strategy = "CONDENSE and focus on impact."; 
+  else if (currentTotalWords > 750) { 
+    // كبح جماح الموديل إذا النص طويل أصلاً
+    targetTotalWords = 700; 
+    strategy = "CONDENSE significantly. Remove fluff. Be concise."; 
   }
 
-  // 3. توزيع الأوزان (Weights) على الأقسام
-  // الخبرة تأخذ النصيب الأكبر (60%)
+  // 3. توزيع الأوزان (السيطرة على حجم الأقسام)
   const weights = { 
     'experience': 0.60, 
     'projects': 0.15, 
-    'summary': 0.15, 
-    'education': 0.05, 
+    'summary': 0.10, 
+    'education': 0.10, 
     'skills': 0.05 
   };
   
-  // حساب عدد الأقسام من كل نوع لتوزيع الحصص
+  // عد الأقسام
   const typeCounts = { 'experience': 0, 'projects': 0, 'summary': 0, 'education': 0, 'skills': 0, 'other': 0 };
   sections.forEach(s => {
       const t = s.title.toLowerCase();
@@ -97,7 +99,7 @@ async function handleSmartBulkImprove(sections) {
       else typeCounts['other']++;
   });
 
-  // بناء التعليمات لكل قسم مع تحديد عدد الكلمات المطلوب بدقة
+  // 4. بناء التعليمات مع "سقف" لكل قسم
   const compressedInput = sections.map(s => {
       const t = s.title.toLowerCase();
       let category = 'other';
@@ -110,39 +112,33 @@ async function handleSmartBulkImprove(sections) {
       else if (t.includes('skill')) { category = 'skills'; weight = weights.skills; }
 
       const count = typeCounts[category] || 1;
-      const totalCategoryWords = targetTotalWords * weight;
+      // الحسبة الدقيقة: الهدف الكلي * وزن القسم / عدد عناصر القسم
+      let sectionTarget = Math.round(targetTotalWords * weight / count);
       
-      // معادلة التوزيع: حصة الفئة / عدد عناصرها
-      let sectionTarget = Math.round(totalCategoryWords / count);
-      
-      // ضمان الحد الأدنى للكلمات (لا نريد أقساماً فارغة)
-      if (sectionTarget < 50 && category !== 'other') sectionTarget = 70; 
+      // حدود الأمان (لا يقل عن 30 ولا يزيد عن 250 للقسم الواحد)
+      if (sectionTarget < 30 && category !== 'other') sectionTarget = 40;
+      if (sectionTarget > 250) sectionTarget = 250; // سقف إجباري لمنع الهلوسة
 
       return {
           id: s.id, 
           type: s.title, 
           content: s.content,
-          instruction: `Strategy: ${strategy}. TARGET LENGTH: Approximately ${sectionTarget} words. Action: Rewrite fully to meet this length.`
+          instruction: `Strategy: ${strategy}. STRICT LIMIT: Maximum ${sectionTarget} words for this section. Do NOT exceed.`
       };
   });
 
-  // 4. بناء الـ Prompt
+  // 5. الـ Prompt الصارم
   const prompt = `
     ROLE: Executive Resume Writer.
-    TASK: Rewrite ALL the following resume sections.
-    GLOBAL GOAL: The final resume MUST be between 500-700 words total.
+    TASK: Rewrite resume sections.
+    GLOBAL CONSTRAINT: Total resume MUST be approx 600 words.
     
-    🚨 LANGUAGE RULES (ZERO TOLERANCE):
-    1. Detect language of EACH section individually.
-    2. Output MUST match input language exactly (Arabic->Arabic, English->English).
-    3. DO NOT TRANSLATE.
+    🚨 RULES:
+    1. WORD COUNT: STRICTLY follow the "STRICT LIMIT" instruction for each section. Do NOT write long essays.
+    2. LANGUAGE: DETECT input language -> OUTPUT in SAME language. DO NOT TRANSLATE.
+    3. CONTENT: Use bullet points. Remove repetitive words.
     
-    FORMATTING RULES:
-    1. Return valid HTML (<p>, <ul>, <li>, <strong>).
-    2. STRICTLY FOLLOW the "TARGET LENGTH" instruction for each section to achieve the total word count.
-    3. Use strong action verbs.
-    
-    INPUT SECTIONS: ${JSON.stringify(compressedInput)}
+    INPUT: ${JSON.stringify(compressedInput)}
     
     OUTPUT SCHEMA: { "improvedSections": [ { "id": "original_id", "improvedContent": "HTML String" } ] }
   `;
@@ -150,7 +146,7 @@ async function handleSmartBulkImprove(sections) {
   const completion = await groq.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
     model: MODEL_NAME,
-    temperature: 0.3,
+    temperature: 0.2, // تقليل الحرارة لتقليل الإبداع الزائد (الهلوسة)
     response_format: { type: "json_object" }
   });
 
@@ -166,7 +162,9 @@ async function handleSmartBulkImprove(sections) {
   return mapping;
 }
 
-// 3. Main Handler
+// ==========================================
+// 🚀 Main Handler
+// ==========================================
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -207,30 +205,25 @@ export default async function handler(req, res) {
       result.overallScore = calculateATSScore(result);
     } 
     
-    // ✅ 1. التحسين الشامل (Bulk) - يضمن 500-700 كلمة
+    // ✅ 1. التحسين الشامل المضبوط (Controlled Bulk)
     else if (action === 'bulk_improve') {
        result = await handleSmartBulkImprove(payload.sections);
     }
 
-    // ✅ 2. التحسين الفردي المتوازي (Parallel) - يلتزم بالتعليمات القادمة من الواجهة
+    // ✅ 2. التحسين الفردي (Instruction Based)
     else if (action === 'improve_with_instructions') {
        const prompt = `
         You are a Professional Resume Writer.
+        INPUT: "${payload.content}"
+        INSTRUCTION: ${payload.instruction}
         
-        INPUT CONTENT: "${payload.content}"
-        INSTRUCTION: ${payload.instruction} (Use this instruction to determine length).
-        
-        🚨 CRITICAL LANGUAGE RULES:
-        1. DETECT language of "INPUT CONTENT".
-        2. IF ARABIC -> OUTPUT ARABIC.
-        3. IF ENGLISH -> OUTPUT ENGLISH.
-        4. DO NOT TRANSLATE.
-        
-        FORMATTING: Return HTML string (<p>, <ul>, <li>).
+        RULES:
+        1. Language: SAME AS INPUT. NO TRANSLATION.
+        2. Length: STRICTLY follow the instruction.
+        3. Format: HTML.
         
         OUTPUT JSON: { "improvedContent": "HTML String" }
       `;
-      
       const completion = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],
         model: MODEL_NAME,
@@ -240,12 +233,12 @@ export default async function handler(req, res) {
       result = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
     }
     
-    // تحسين قسم واحد
+    // تحسين قسم عادي
     else if (action === 'improve') {
       const prompt = `
         Rewrite section "${payload.title}". 
         Content: ${payload.content}.
-        Rule: Detect language and keep it.
+        Rule: Same Language.
         Output JSON: { "professional": "string", "atsOptimized": "string" }
       `;
       const completion = await groq.chat.completions.create({
@@ -282,4 +275,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
-
+ 
