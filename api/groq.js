@@ -1,16 +1,12 @@
 import Groq from 'groq-sdk';
 
-// 1. إعداد الاتصال الآمن بالسيرفر
 const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
 const MODEL_NAME = 'llama-3.3-70b-versatile';
 
-// ==========================================
-// 🛠️ Helpers
-// ==========================================
-
+// 1. Helpers
 function cleanAndParseJSON(text) {
   if (!text) return {};
   try {
@@ -32,7 +28,6 @@ function cleanAndParseJSON(text) {
   }
 }
 
-// حساب النقاط (Score Calculation)
 function calculateATSScore(data) {
   const flags = data?.parsingFlags || {};
   if (flags.isGraphic || flags.hasColumns || flags.hasTables) return 35;
@@ -63,26 +58,25 @@ function calculateATSScore(data) {
 }
 
 // ==========================================
-// 🧠 Logic: Elastic Optimization (حل مشكلة قصر النص)
+// 🧠 Logic: Elastic Optimization
 // ==========================================
 async function handleBulkImprove(sections) {
-  // 1. حساب الكلمات
+  // حساب الكلمات
   const currentTotalWords = sections.reduce((acc, section) => acc + section.content.trim().split(/\s+/).length, 0);
   
-  // 2. تحديد الاستراتيجية
+  // استراتيجية التوسع
   let targetWords = currentTotalWords;
   let strategy = "OPTIMIZE";
 
   if (currentTotalWords < 450) { 
-    targetWords = 650; // إجبار الموديل على التوسع إلى 650 كلمة
-    strategy = "EXPAND significantly. Add details, use Star Method, and elaborate."; 
+    targetWords = 650; 
+    strategy = "EXPAND significantly. Add details using Star Method."; 
   } 
   else if (currentTotalWords > 800) { 
     targetWords = 700; 
     strategy = "CONDENSE and focus on impact."; 
   }
 
-  // 3. تحضير التعليمات لكل قسم
   const weights = { 'experience': 0.65, 'projects': 0.15, 'summary': 0.10, 'education': 0.05, 'skills': 0.05 };
 
   const compressedInput = sections.map(s => {
@@ -96,26 +90,34 @@ async function handleBulkImprove(sections) {
       id: s.id, 
       type: s.title, 
       content: s.content, 
-      instruction: `Strategy: ${strategy}. Target Words: AT LEAST ${sectionTarget}. Action: Rewrite fully in HTML.` 
+      instruction: `Strategy: ${strategy}. Target Words: AT LEAST ${sectionTarget}. Action: Rewrite.` 
     };
   });
 
+  // ✅ التعديل هنا: تعليمات صارمة جداً بخصوص اللغة
   const prompt = `
     ROLE: Executive Resume Writer.
-    TASK: Rewrite resume sections based on strategy: ${strategy}.
-    GLOBAL TARGET: ~${targetWords} words.
+    TASK: Rewrite resume sections.
+    STRATEGY: ${strategy} (Global Target: ~${targetWords} words).
     
-    CRITICAL RULES:
-    1. EXPAND content if instructed. Use "Star Method".
-    2. DO NOT SUMMARIZE. Write full professional paragraphs and bullets.
-    3. FORMAT: Use HTML tags (<p>, <ul>, <li>, <strong>) strictly.
-    4. LANGUAGE: If input is Arabic, output MUST be Arabic.
-    5. RETURN: Valid JSON Array.
+    CRITICAL RULES (STRICT COMPLIANCE REQUIRED):
+    1. LANGUAGE: DETECT THE LANGUAGE OF THE INPUT. OUTPUT MUST BE IN THE EXACT SAME LANGUAGE.
+       - IF INPUT IS ENGLISH -> OUTPUT ENGLISH.
+       - IF INPUT IS ARABIC -> OUTPUT ARABIC.
+       - DO NOT TRANSLATE.
+    
+    2. CONTENT:
+       - EXPAND content using "Star Method" if instructed.
+       - DO NOT SUMMARIZE. Write detailed professional bullets.
+       - Maintain numbers, metrics, and technical terms.
+    
+    3. FORMAT:
+       - Return HTML tags ONLY (<p>, <ul>, <li>, <strong>).
     
     INPUT: ${JSON.stringify(compressedInput)}
     
     OUTPUT SCHEMA:
-    { "improvedSections": [ { "id": "original_id", "improvedContent": "HTML Content" } ] }
+    { "improvedSections": [ { "id": "original_id", "improvedContent": "HTML String" } ] }
   `;
 
   const completion = await groq.chat.completions.create({
@@ -127,7 +129,6 @@ async function handleBulkImprove(sections) {
 
   const data = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
   
-  // استخراج البيانات بدقة مهما اختلف شكل الرد
   let items = [];
   if (data.improvedSections && Array.isArray(data.improvedSections)) items = data.improvedSections;
   else if (Array.isArray(data)) items = data;
@@ -145,7 +146,6 @@ async function handleBulkImprove(sections) {
 // 🚀 Main Handler
 // ==========================================
 export default async function handler(req, res) {
-  // إعدادات CORS للسماح للواجهة بالاتصال
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -158,7 +158,6 @@ export default async function handler(req, res) {
   try {
     let result = {};
 
-    // 1. تحليل السيرة
     if (action === 'analyze') {
       const prompt = `
         ROLE: Expert ATS Resume Scanner.
@@ -186,12 +185,10 @@ export default async function handler(req, res) {
       result.overallScore = calculateATSScore(result);
     } 
     
-    // 2. التحسين الشامل (Elastic)
     else if (action === 'bulk_improve') {
       result = await handleBulkImprove(payload.sections);
     }
     
-    // 3. تحسين قسم واحد
     else if (action === 'improve') {
       const prompt = `Rewrite section "${payload.title}". Tone: Executive. Content: ${payload.content}. Output JSON: { "professional": "string", "atsOptimized": "string" }`;
       const completion = await groq.chat.completions.create({
@@ -202,7 +199,6 @@ export default async function handler(req, res) {
       result = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
     }
     
-    // 4. مطابقة الوظيفة
     else if (action === 'match') {
       const prompt = `Match Resume vs JD. JD: ${payload.jd.substring(0, 4000)}. RESUME: ${payload.resume.substring(0, 10000)}. Output JSON: { "matchedCoreKeywords": [], "missingCoreKeywords": [], "matchFeedback": "", "matchPercentage": 0 }`;
       const completion = await groq.chat.completions.create({
@@ -220,4 +216,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
-
+ 
