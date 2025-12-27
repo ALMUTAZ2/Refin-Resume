@@ -6,7 +6,7 @@ export class GeminiService {
   private genAI: GoogleGenerativeAI;
   
   // ✅ الموديل 1.5 فلاش (المستقر)
-  private readonly MODEL_NAME = 'gemini-pro';
+  private readonly MODEL_NAME = 'gemini-2.0-flash-lite'; 
  
  
   constructor() {
