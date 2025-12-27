@@ -1,13 +1,10 @@
-// services/geminiService.ts
-// هذا الملف آمن تماماً، لا يحتوي على أي مفاتيح سرية
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 
 export class GeminiService {
   
-  // دالة الاتصال بالسيرفر الخلفي (Vercel Function)
+  // دالة الاتصال الموحدة بالسيرفر
   private async callBackend(action: string, payload: any): Promise<any> {
     try {
-      // نستدعي الـ API الذي أنشأناه في المجلد api/groq.js
       const response = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -27,10 +24,9 @@ export class GeminiService {
 
   // 1. واجهة التحليل
   async analyzeResume(text: string): Promise<AnalysisResult> {
-    // نرسل النص للسيرفر فقط
+    // نرسل النص، والسيرفر يقوم بكل عمليات التحليل وحساب السكور
     const data = await this.callBackend('analyze', { text });
     
-    // تنسيق البيانات القادمة من السيرفر للتأكد من توافقها مع Types
     return {
       detectedRole: data.extractedHeadlines?.[0] || "Unknown",
       parsingFlags: data.parsingFlags || {},
@@ -48,12 +44,17 @@ export class GeminiService {
     };
   }
 
-  // 2. واجهة تحسين القسم
+  // 2. واجهة التحسين الشامل (الآن ترسل الأقسام للسيرفر ليعالجها بالمنطق الذكي)
+  async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
+    return await this.callBackend('bulk_improve', { sections });
+  }
+
+  // 3. تحسين قسم
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     return await this.callBackend('improve', { title, content });
   }
 
-  // 3. واجهة المطابقة
+  // 4. مطابقة الوظيفة
   async matchJobDescription(resumeText: string, sections: any[], jd: string): Promise<JobMatchResult> {
     const data = await this.callBackend('match', { resume: resumeText, jd });
     
@@ -65,10 +66,5 @@ export class GeminiService {
       tailoredSections: []
     };
   }
-
-  // دالة فارغة للتوافق
-  async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
-    return {}; 
-  }
 }
- 
+
