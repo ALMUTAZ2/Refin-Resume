@@ -1,7 +1,7 @@
 {
   "functions": {
     "api/groq.js": {
-      "maxDuration": 60
+      "maxDuration": 120
     }
   }
 }
