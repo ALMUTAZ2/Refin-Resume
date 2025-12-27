@@ -2,7 +2,7 @@ import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "
 
 export class GeminiService {
   
-  // دالة الاتصال الموحدة بالسيرفر
+  // دالة الاتصال الموحدة بالسيرفر الخلفي
   private async callBackend(action: string, payload: any): Promise<any> {
     try {
       const response = await fetch('/api/groq', {
@@ -22,9 +22,8 @@ export class GeminiService {
     }
   }
 
-  // 1. واجهة التحليل
+  // 1. تحليل السيرة
   async analyzeResume(text: string): Promise<AnalysisResult> {
-    // نرسل النص، والسيرفر يقوم بكل عمليات التحليل وحساب السكور
     const data = await this.callBackend('analyze', { text });
     
     return {
@@ -44,12 +43,13 @@ export class GeminiService {
     };
   }
 
-  // 2. واجهة التحسين الشامل (الآن ترسل الأقسام للسيرفر ليعالجها بالمنطق الذكي)
+  // 2. التحسين الشامل (Bulk Improve)
+  // هذه الدالة ترسل الأقسام للسيرفر ليعالجها Llama 3.3
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
     return await this.callBackend('bulk_improve', { sections });
   }
 
-  // 3. تحسين قسم
+  // 3. تحسين قسم واحد
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     return await this.callBackend('improve', { title, content });
   }
