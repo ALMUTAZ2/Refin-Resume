@@ -4,7 +4,10 @@ const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
-const MODEL_NAME = 'llama-3.1-8b-instant';
+// ✅ نستخدم Llama 3.3 70B (الذكي) في التحليل فقط، لأنه طلب واحد ولن يطول
+// إذا واجهت Timeout في التحليل، غيره إلى 'llama-3.1-8b-instant'
+// لكن 70B أفضل بكثير في استخراج الأقسام كاملة
+const MODEL_NAME = 'llama-3.3-70b-versatile'; 
 
 export const config = {
   api: {
@@ -33,11 +36,10 @@ function cleanAndParseJSON(text) {
   }
 }
 
-// دالة التنسيق
 function forceToHTML(content) {
   if (!content) return "";
   
-  // التعامل مع المصفوفات
+  // المصفوفات -> قوائم
   if (Array.isArray(content)) {
     const listItems = content.map(item => {
       if (typeof item === 'object' && item !== null) {
@@ -51,13 +53,11 @@ function forceToHTML(content) {
     return `<ul>${listItems}</ul>`;
   }
 
-  // التعامل مع الكائنات (مهم جداً للبيانات الشخصية)
+  // الكائنات -> أسطر (مهم للبيانات الشخصية)
   if (typeof content === 'object' && content !== null) {
-    // إذا كانت بيانات شخصية، نضعها في سطر واحد أو أسطر متتالية
     return Object.entries(content)
       .map(([key, value]) => {
           if (key === 'id') return '';
-          // تنظيف المفتاح (firstName -> First Name)
           const niceKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
           return `<div class="mb-1"><strong>${niceKey}:</strong> ${String(value)}</div>`;
       })
@@ -81,59 +81,47 @@ function normalizeAnalysisData(data) {
 }
 
 function calculateATSScore(data) {
-  // (نفس منطق السكور...)
-  const metrics = data?.metrics || {};
-  return 50; // اختصاراً للرد
+    // منطق السكور (مختصر)
+    return 60; 
 }
 
 // ==========================================
-// 🧠 Logic
+// 🧠 Logic: Parallel Improve
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
-  
   const promises = sections.map(async (section) => {
-      
       const titleLower = section.title.toLowerCase();
-      let formattingRule = "";
+      let formattingRule = "Use HTML tags.";
       
-      // ✅ تخصيص التنسيق ليشمل البيانات الشخصية
-      if (titleLower.includes('personal') || titleLower.includes('contact') || titleLower.includes('info')) {
-          formattingRule = "OUTPUT MUST be formatted as compact HTML lines (e.g., <p><strong>Name:</strong> ...<br><strong>Email:</strong> ...</p>). Do not use bullet points.";
-      } else if (titleLower.includes('summary') || titleLower.includes('profile')) {
-          formattingRule = "OUTPUT MUST be a single HTML paragraph <p>...</p>.";
-      } else if (titleLower.includes('experience') || titleLower.includes('work') || titleLower.includes('skill')) {
-          formattingRule = "OUTPUT MUST be an HTML list <ul><li>...</li></ul>.";
-      } else {
-          formattingRule = "Use appropriate HTML tags.";
+      if (titleLower.includes('personal') || titleLower.includes('contact')) {
+          formattingRule = "Format as compact lines (Name, Email, Phone). No bullets.";
+      } else if (titleLower.includes('summary')) {
+          formattingRule = "Format as a single HTML paragraph <p>...</p>.";
+      } else if (titleLower.includes('experience') || titleLower.includes('education') || titleLower.includes('skill')) {
+          formattingRule = "Format as an HTML list <ul><li>...</li></ul>.";
       }
 
       const prompt = `
-        ROLE: HTML Content Formatter.
-        INPUT DATA: "${JSON.stringify(section.content)}"
-        TASK: Format input into resume HTML.
+        ROLE: HTML Formatter.
+        INPUT: "${JSON.stringify(section.content)}"
         
-        🚨 RULES:
-        1. **NO HALLUCINATIONS**: Keep exact facts.
-        2. **FORMAT**: ${formattingRule}
-        3. **LANGUAGE**: Keep input language.
-        
-        OUTPUT JSON: { "improvedContent": "html string" }
+        RULES:
+        1. Keep FACTS exactly as is.
+        2. FORMAT: ${formattingRule}
+        3. OUTPUT JSON: { "improvedContent": "html string" }
       `;
 
       try {
+          // نستخدم الموديل السريع هنا (8b) لأن العدد كبير ونحتاج سرعة
           const completion = await groq.chat.completions.create({
               messages: [{ role: "user", content: prompt }],
-              model: MODEL_NAME,
+              model: 'llama-3.1-8b-instant', // ⚡ سرعة للمعالجة المتوازية
               temperature: 0.1,
               response_format: { type: "json_object" }
           });
-          
           const data = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
-          const finalHtml = forceToHTML(data.improvedContent || section.content);
-          return { id: section.id, content: finalHtml };
-
+          return { id: section.id, content: forceToHTML(data.improvedContent || section.content) };
       } catch (error) {
-          console.error(`Error section ${section.id}:`, error);
           return { id: section.id, content: forceToHTML(section.content) }; 
       }
   });
@@ -145,8 +133,10 @@ async function handleUnifiedATSImprove(sections) {
 }
 
 
+// ==========================================
+// 3. Main Handler
+// ==========================================
 export default async function handler(req, res) {
-  // CORS headers...
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -159,34 +149,54 @@ export default async function handler(req, res) {
     let result = {};
 
     if (action === 'analyze') {
-      // ✅ التعديل الأهم: إجبار الموديل على إنشاء قسم للمعلومات الشخصية
+      // ✅ التعديل الجذري: تعليمات شاملة لاستخراج كل قسم
       const prompt = `
-        ROLE: ATS Resume Parser.
-        TASK: Extract resume data into structured JSON.
+        ROLE: Expert Resume Parser.
         
-        RESUME: ${payload.text.substring(0, 20000)}
+        TASK: Parse the ENTIRE resume text below into structured sections.
         
-        🚨 CRITICAL INSTRUCTION:
-        You MUST create a distinct section for "Personal Information" as the FIRST item in "structuredSections".
-        It must contain: Name, Email, Phone, LinkedIn, Address.
+        RESUME CONTENT: 
+        ${payload.text.substring(0, 25000)}
         
-        OUTPUT SCHEMA: {
-          "structuredSections": [ 
-            { "id": "sec_personal", "title": "Personal Information", "content": "Name: ..., Email: ..." },
-            { "id": "sec_exp", "title": "Experience", "content": "..." } 
+        🚨 MANDATORY SECTIONS TO EXTRACT (If present):
+        1. **Personal Information** (Name, Email, Phone, Location) -> MUST BE FIRST.
+        2. **Professional Summary** (or Profile/About).
+        3. **Experience** (Work History).
+        4. **Education**.
+        5. **Skills** (Technical & Soft).
+        6. **Projects**.
+        7. **Certifications**.
+        8. **Languages**.
+        9. **Any other custom headers** found in text.
+        
+        RULES:
+        - Do NOT skip any text. Map every line to a section.
+        - Capture the FULL content of each section.
+        - Return valid JSON only.
+        
+        OUTPUT SCHEMA:
+        {
+          "structuredSections": [
+            { "id": "sec_personal", "title": "Personal Information", "content": "..." },
+            { "id": "sec_summary", "title": "Professional Summary", "content": "..." },
+            { "id": "sec_exp", "title": "Experience", "content": "..." },
+            { "id": "sec_edu", "title": "Education", "content": "..." },
+            ... and so on for all found sections
           ],
-          "extractedHeadlines": ["Current Role"],
+          "extractedHeadlines": ["Current Job Title"],
           "parsingFlags": {},
           "metrics": {},
           "summaryFeedback": "..."
         }
       `;
+      
       const completion = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],
-        model: MODEL_NAME,
+        model: MODEL_NAME, // نستخدم 70B هنا لأنه طلب واحد ويحتاج ذكاء
         temperature: 0,
         response_format: { type: "json_object" }
       });
+      
       const rawData = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
       result = normalizeAnalysisData(rawData);
       if (!rawData.error) result.overallScore = calculateATSScore(result);
@@ -196,17 +206,15 @@ export default async function handler(req, res) {
         result = await handleUnifiedATSImprove(payload.sections);
     }
     
-    // ... باقي الدوال (improve, match) كما هي ...
     else if (action === 'improve') {
-        // ... (نفس الكود القديم)
         const prompt = `Rewrite section "${payload.title}". Content: ${payload.content}. Output JSON: { "professional": "", "atsOptimized": "" }`;
-        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: MODEL_NAME, response_format: { type: "json_object" } });
+        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: 'llama-3.1-8b-instant', response_format: { type: "json_object" } });
         result = cleanAndParseJSON(completion.choices[0]?.message?.content);
     }
+    
     else if (action === 'match') {
-        // ... (نفس الكود القديم)
         const prompt = `Match Resume vs JD. JD: ${payload.jd}. Resume: ${payload.resume}. Output JSON...`;
-        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: MODEL_NAME, response_format: { type: "json_object" } });
+        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: 'llama-3.1-8b-instant', response_format: { type: "json_object" } });
         result = cleanAndParseJSON(completion.choices[0]?.message?.content);
     }
 
@@ -217,4 +225,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
- 
+
