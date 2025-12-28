@@ -4,7 +4,7 @@ const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
-// 🧠 الاستراتيجية: 70B للتحليل (الذكاء)، 8B للتحسين (السرعة)
+// الاستراتيجية الناجحة: 70B للتحليل (الدقة) و 8B للتحسين (السرعة)
 const ANALYZE_MODEL = 'llama-3.3-70b-versatile';
 const IMPROVE_MODEL = 'llama-3.1-8b-instant';
 
@@ -17,7 +17,7 @@ export const config = {
 };
 
 // ==========================================
-// 🛠️ Helpers (المُنظفات الذكية)
+// 🛠️ Helpers (المغسلة الذكية)
 // ==========================================
 
 function cleanAndParseJSON(text) {
@@ -35,15 +35,18 @@ function cleanAndParseJSON(text) {
   }
 }
 
-// 🔥 دالة التنسيق المحسنة (تزيل الرموز المزدوجة)
+// 🔥 الدالة المُعدلة لإزالة النجوم * وحل مشكلة اللغات
 function forceToHTML(content) {
   if (!content) return "";
   
-  // 1. التعامل مع المصفوفات (إزالة النجوم والشرطات الزائدة)
+  // 1. التعامل مع القوائم (Arrays) - مثل الخبرات والدورات واللغات
   if (Array.isArray(content)) {
     const listItems = content.map(item => {
       let text = "";
+      
+      // إذا كان العنصر كائناً (مثل اللغات {Language: Arabic, Level: Native})
       if (typeof item === 'object' && item !== null) {
+        // ندمج القيم لتصبح "Arabic - Native"
         text = Object.values(item)
             .filter(v => v && (typeof v === 'string' || typeof v === 'number'))
             .join(" - ");
@@ -51,28 +54,32 @@ function forceToHTML(content) {
         text = String(item);
       }
       
-      // 🧹 تنظيف: إزالة أي رموز مثل * أو - في بداية السطر لأننا سنضع <li>
-      text = text.replace(/^[\s\*\-\•]+/, '').trim();
+      // 🧹 التنظيف العميق: إزالة أي رموز في البداية (* أو - أو •)
+      // هذا يحل مشكلة النجوم المزدوجة
+      text = text.replace(/^[\s\*\-\•\·]+/, '').trim();
       
       return `<li>${text}</li>`;
     }).join('');
     return `<ul>${listItems}</ul>`;
   }
 
-  // 2. التعامل مع الكائنات (للمعلومات الشخصية)
+  // 2. التعامل مع الكائنات (للمعلومات الشخصية فقط)
   if (typeof content === 'object' && content !== null) {
     return Object.entries(content)
       .map(([key, value]) => {
           if (key === 'id') return '';
           const niceKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-          // تنسيق أجمل للهيدر
-          return `<div style="margin-bottom: 4px;"><strong>${niceKey}:</strong> ${String(value)}</div>`;
+          // تنسيق الهيدر بشكل جميل
+          return `<div style="margin-bottom: 3px;"><strong>${niceKey}:</strong> ${String(value)}</div>`;
       })
       .join('');
   }
 
   // 3. النصوص العادية
-  return String(content);
+  let strContent = String(content);
+  // تنظيف النصوص أيضاً من النجوم
+  strContent = strContent.replace(/^[\s\*\-\•\·]+/, '').trim();
+  return strContent;
 }
 
 function normalizeAnalysisData(data) {
@@ -88,12 +95,10 @@ function normalizeAnalysisData(data) {
   return { ...data, structuredSections: sections };
 }
 
-function calculateATSScore(data) {
-    return 65; // Placeholder
-}
+function calculateATSScore(data) { return 70; }
 
 // ==========================================
-// 🧠 Logic: Parallel Improve (The Speed Engine)
+// 🧠 Logic
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
   
@@ -101,13 +106,12 @@ async function handleUnifiedATSImprove(sections) {
       const titleLower = section.title.toLowerCase();
       let formattingRule = "";
       
-      // تخصيص التعليمات
       if (titleLower.includes('personal') || titleLower.includes('contact')) {
-          formattingRule = "Return a JSON Object matching input keys. Do NOT use bullets.";
+          formattingRule = "Return a JSON Object matching input keys.";
       } else if (titleLower.includes('summary')) {
-          formattingRule = "Return a single HTML paragraph <p>...</p>.";
-      } else if (titleLower.includes('experience') || titleLower.includes('education') || titleLower.includes('skill') || titleLower.includes('course')) {
-          formattingRule = "Return a clean Array of strings. Do NOT add '*' or '-' at the start of strings.";
+          formattingRule = "Return a single HTML paragraph <p>...</p>. Do NOT use bullets.";
+      } else if (titleLower.includes('experience') || titleLower.includes('education') || titleLower.includes('skill') || titleLower.includes('course') || titleLower.includes('lang')) {
+          formattingRule = "Return a clean Array of strings. Do NOT use markdown symbols like '*' or '-'.";
       } else {
           formattingRule = "Return clean HTML strings.";
       }
@@ -129,7 +133,7 @@ async function handleUnifiedATSImprove(sections) {
       try {
           const completion = await groq.chat.completions.create({
               messages: [{ role: "user", content: prompt }],
-              model: IMPROVE_MODEL, // 8B Instant (Fast)
+              model: IMPROVE_MODEL, // 8B Instant
               temperature: 0.1,
               response_format: { type: "json_object" }
           });
@@ -146,12 +150,10 @@ async function handleUnifiedATSImprove(sections) {
   return mapping;
 }
 
-
 // ==========================================
 // 3. Main Handler
 // ==========================================
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -164,14 +166,14 @@ export default async function handler(req, res) {
     let result = {};
 
     if (action === 'analyze') {
-      // 🧠 استخدام العقل الكبير (70B) للتحليل الدقيق
+      // استخدام 70B للتحليل الشامل والدقيق
       const prompt = `
         ROLE: Master Resume Parser.
         TASK: Parse resume text to structured JSON.
         RESUME: ${payload.text.substring(0, 25000)}
         
         MANDATORY SECTIONS SEQUENCE:
-        1. **Personal Information** (Object: Name, Email, Phone, LinkedIn) -> ID: "sec_personal"
+        1. **Personal Information** (Name, Email, Phone, LinkedIn) -> ID: "sec_personal"
         2. **Professional Summary** -> ID: "sec_summary"
         3. **Experience** -> ID: "sec_exp"
         4. **Education** -> ID: "sec_edu"
@@ -210,7 +212,6 @@ export default async function handler(req, res) {
     }
     
     else if (action === 'improve' || action === 'match') {
-       // Legacy helpers using fast model
        const prompt = `Rewrite/Match content...`;
        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt + JSON.stringify(payload) }], model: IMPROVE_MODEL, response_format: { type: "json_object" } });
        result = cleanAndParseJSON(completion.choices[0]?.message?.content);
