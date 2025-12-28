@@ -1,10 +1,10 @@
+
 import Groq from 'groq-sdk';
 
 const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
-// الاستراتيجية الناجحة: 70B للتحليل (الدقة) و 8B للتحسين (السرعة)
 const ANALYZE_MODEL = 'llama-3.3-70b-versatile';
 const IMPROVE_MODEL = 'llama-3.1-8b-instant';
 
@@ -17,7 +17,7 @@ export const config = {
 };
 
 // ==========================================
-// 🛠️ Helpers (المغسلة الذكية)
+// 🛠️ Helpers
 // ==========================================
 
 function cleanAndParseJSON(text) {
@@ -35,49 +35,37 @@ function cleanAndParseJSON(text) {
   }
 }
 
-// 🔥 الدالة المُعدلة لإزالة النجوم * وحل مشكلة اللغات
 function forceToHTML(content) {
   if (!content) return "";
   
-  // 1. التعامل مع القوائم (Arrays) - مثل الخبرات والدورات واللغات
   if (Array.isArray(content)) {
     const listItems = content.map(item => {
       let text = "";
-      
-      // إذا كان العنصر كائناً (مثل اللغات {Language: Arabic, Level: Native})
       if (typeof item === 'object' && item !== null) {
-        // ندمج القيم لتصبح "Arabic - Native"
         text = Object.values(item)
             .filter(v => v && (typeof v === 'string' || typeof v === 'number'))
             .join(" - ");
       } else {
         text = String(item);
       }
-      
-      // 🧹 التنظيف العميق: إزالة أي رموز في البداية (* أو - أو •)
-      // هذا يحل مشكلة النجوم المزدوجة
+      // تنظيف الرموز
       text = text.replace(/^[\s\*\-\•\·]+/, '').trim();
-      
       return `<li>${text}</li>`;
     }).join('');
     return `<ul>${listItems}</ul>`;
   }
 
-  // 2. التعامل مع الكائنات (للمعلومات الشخصية فقط)
   if (typeof content === 'object' && content !== null) {
     return Object.entries(content)
       .map(([key, value]) => {
           if (key === 'id') return '';
           const niceKey = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-          // تنسيق الهيدر بشكل جميل
           return `<div style="margin-bottom: 3px;"><strong>${niceKey}:</strong> ${String(value)}</div>`;
       })
       .join('');
   }
 
-  // 3. النصوص العادية
   let strContent = String(content);
-  // تنظيف النصوص أيضاً من النجوم
   strContent = strContent.replace(/^[\s\*\-\•\·]+/, '').trim();
   return strContent;
 }
@@ -95,37 +83,48 @@ function normalizeAnalysisData(data) {
   return { ...data, structuredSections: sections };
 }
 
-function calculateATSScore(data) { return 70; }
+function calculateATSScore(data) { return 75; }
 
 // ==========================================
-// 🧠 Logic
+// 🧠 Logic: Smart Expansion
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
   
   const promises = sections.map(async (section) => {
       const titleLower = section.title.toLowerCase();
-      let formattingRule = "";
       
+      let formattingRule = "";
+      let taskInstruction = "Rewrite to be professional and clear."; // التعليمات الافتراضية
+
+      // 1. تخصيص التنسيق (Format)
       if (titleLower.includes('personal') || titleLower.includes('contact')) {
           formattingRule = "Return a JSON Object matching input keys.";
       } else if (titleLower.includes('summary')) {
-          formattingRule = "Return a single HTML paragraph <p>...</p>. Do NOT use bullets.";
-      } else if (titleLower.includes('experience') || titleLower.includes('education') || titleLower.includes('skill') || titleLower.includes('course') || titleLower.includes('lang')) {
-          formattingRule = "Return a clean Array of strings. Do NOT use markdown symbols like '*' or '-'.";
+          formattingRule = "Return a single HTML paragraph <p>...</p>.";
+          // للملخص: اطلب منه أن يكون مفصلاً
+          taskInstruction = "Rewrite into a strong, comprehensive professional summary (approx 3-4 sentences). Highlight key years of experience and core competencies.";
+      } else if (titleLower.includes('experience') || titleLower.includes('work')) {
+          formattingRule = "Return a clean Array of strings. Do NOT use markdown symbols.";
+          // 🔥 للخبرة: الأمر الحاسم للتطويل وعدم الاختصار
+          taskInstruction = "EXPAND on the responsibilities. Do NOT summarize. Use the STAR method (Situation, Task, Action, Result) to add depth. Ensure each role has at least 4-6 detailed bullet points. Keep all specific numbers and metrics.";
+      } else if (titleLower.includes('skill')) {
+          formattingRule = "Return a clean Array of strings.";
+          taskInstruction = "List technical and soft skills clearly.";
       } else {
           formattingRule = "Return clean HTML strings.";
       }
 
       const prompt = `
-        ROLE: Content Improver.
-        INPUT: "${JSON.stringify(section.content)}"
+        ROLE: Senior ATS Resume Writer.
+        INPUT CONTENT: "${JSON.stringify(section.content)}"
         
-        TASK: Rewrite to be professional.
+        TASK: ${taskInstruction}
         
         RULES:
-        1. Keep FACTS exactly as is.
-        2. FORMATTING: ${formattingRule}
-        3. LANGUAGE: Keep exact input language.
+        1. **FACTS**: Keep exact companies, dates, and job titles. Do NOT invent new jobs.
+        2. **LENGTH**: Do NOT shorten the content. Elaborate and make it sound senior-level.
+        3. **FORMAT**: ${formattingRule}
+        4. **LANGUAGE**: Keep exact input language.
         
         OUTPUT JSON: { "improvedContent": ... }
       `;
@@ -133,8 +132,8 @@ async function handleUnifiedATSImprove(sections) {
       try {
           const completion = await groq.chat.completions.create({
               messages: [{ role: "user", content: prompt }],
-              model: IMPROVE_MODEL, // 8B Instant
-              temperature: 0.1,
+              model: IMPROVE_MODEL,
+              temperature: 0.2, // رفعنا الحرارة قليلاً (0.2) للسماح ببعض الإبداع في التعبير (التطويل)
               response_format: { type: "json_object" }
           });
           const data = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
@@ -150,10 +149,12 @@ async function handleUnifiedATSImprove(sections) {
   return mapping;
 }
 
+
 // ==========================================
 // 3. Main Handler
 // ==========================================
 export default async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -166,7 +167,6 @@ export default async function handler(req, res) {
     let result = {};
 
     if (action === 'analyze') {
-      // استخدام 70B للتحليل الشامل والدقيق
       const prompt = `
         ROLE: Master Resume Parser.
         TASK: Parse resume text to structured JSON.
@@ -197,7 +197,7 @@ export default async function handler(req, res) {
       
       const completion = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],
-        model: ANALYZE_MODEL, // 70B Versatile
+        model: ANALYZE_MODEL,
         temperature: 0,
         response_format: { type: "json_object" }
       });
@@ -224,4 +224,3 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
- 
