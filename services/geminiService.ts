@@ -2,7 +2,6 @@ import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "
 
 export class GeminiService {
   
-  // دالة الاتصال الموحدة بالسيرفر الخلفي (Backend API)
   private async callBackend(action: string, payload: any): Promise<any> {
     try {
       const response = await fetch('/api/groq', {
@@ -22,14 +21,8 @@ export class GeminiService {
     }
   }
 
-  // ============================================================
-  // 1. تحليل السيرة الذاتية (Analyze)
-  // ============================================================
   async analyzeResume(text: string): Promise<AnalysisResult> {
-    // نرسل النص للسيرفر ليقوم بالتحليل وحساب السكور
     const data = await this.callBackend('analyze', { text });
-    
-    // تنسيق البيانات المستلمة لضمان عدم حدوث أخطاء في الواجهة
     return {
       detectedRole: data.extractedHeadlines?.[0] || "Unknown",
       parsingFlags: data.parsingFlags || {},
@@ -41,90 +34,96 @@ export class GeminiService {
       criticalErrors: [],
       strengths: [],
       weaknesses: [],
-      summaryFeedback: data.summaryFeedback || "Analysis Complete",
+      summaryFeedback: data.summaryFeedback || "Done",
       structuredSections: data.structuredSections || [],
       overallScore: data.overallScore || 50
     };
   }
 
   // ============================================================
-  // 2. التحسين الشامل السريع (Parallel Bulk Improve) 🚀
+  // 🧠 الحل الذكي: التجميع الديناميكي (Smart Dynamic Batching)
+  // يوازن بين سرعة Vercel وتوفير التوكنز
   // ============================================================
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
-    // أ) حساب استراتيجية التوسع أو الاختصار (يتم هنا في المتصفح لتوزيع المهام)
-    const currentTotalWords = sections.reduce((acc, s) => acc + s.content.trim().split(/\s+/).length, 0);
-    let strategy = "OPTIMIZE";
-    let targetWords = currentTotalWords;
+    
+    // إعدادات الحزمة الآمنة (لكي لا ينقطع الاتصال في Vercel)
+    // Llama 70B يعالج حوالي 300 كلمة بسرعة مقبولة داخل الـ 10 ثواني
+    const MAX_WORDS_PER_BATCH = 250; 
 
-    // قواعد الذكاء: إذا النص قصير جداً نوسعه، وإذا طويل جداً نختصره
-    if (currentTotalWords < 450) {
-        targetWords = 650; 
-        strategy = "EXPAND significantly. Add professional details.";
-    } else if (currentTotalWords > 800) {
-        targetWords = 700;
-        strategy = "CONDENSE";
+    const batches: ResumeSection[][] = [];
+    let currentBatch: ResumeSection[] = [];
+    let currentBatchWordCount = 0;
+
+    // 1. خوارزمية التوزيع
+    for (const section of sections) {
+        const sectionWords = section.content.split(/\s+/).length;
+        const isHeavySection = section.title.toLowerCase().includes('experience') || section.title.toLowerCase().includes('work');
+
+        // إذا كان القسم "ثقيل" جداً (أكثر من الحد)، نضعه في حزمة لوحده فوراً
+        if (isHeavySection && sectionWords > 150) {
+            // نغلق الحزمة الحالية إذا فيها عناصر
+            if (currentBatch.length > 0) {
+                batches.push(currentBatch);
+                currentBatch = [];
+                currentBatchWordCount = 0;
+            }
+            // نضيف الثقيل كحزمة مستقلة
+            batches.push([section]);
+            continue;
+        }
+
+        // إذا إضافة القسم ستتجاوز الحد المسموح، نغلق الحزمة ونفتح جديدة
+        if (currentBatchWordCount + sectionWords > MAX_WORDS_PER_BATCH) {
+            batches.push(currentBatch);
+            currentBatch = [];
+            currentBatchWordCount = 0;
+        }
+
+        // نضيف القسم للحزمة الحالية
+        currentBatch.push(section);
+        currentBatchWordCount += sectionWords;
     }
 
-    // ب) توزيع الأوزان على الأقسام
-    const weights: Record<string, number> = { 
-      'experience': 0.65, 
-      'projects': 0.15, 
-      'summary': 0.10, 
-      'education': 0.05, 
-      'skills': 0.05 
-    };
+    // إضافة البواقي
+    if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+    }
 
-    // ج) إطلاق الطلبات بشكل متوازي (Parallel Requests)
-    // هذا يرسل عدة طلبات صغيرة للسيرفر في نفس الوقت لتجنب البطء والـ Timeouts
-    const promises = sections.map(async (section) => {
-        const type = section.title.toLowerCase();
-        let weight = weights['experience'] || 0.65;
-        if (type.includes('summary')) weight = weights['summary'];
-        else if (type.includes('project')) weight = weights['projects'];
-        else if (type.includes('education')) weight = weights['education'];
-        else if (type.includes('skill')) weight = weights['skills'];
-        
-        const sectionTarget = Math.round(targetWords * weight);
-        
+    console.log(`Smart Batching: Optimized into ${batches.length} requests (instead of ${sections.length}).`);
+
+    // 2. إرسال الحزم بشكل متوازي (Parallel Execution)
+    const promises = batches.map(async (batchSections) => {
         try {
-            // نرسل طلب خاص لكل قسم إلى الـ Endpoint الجديد في السيرفر
-            const result = await this.callBackend('improve_with_instructions', {
-                title: section.title,
-                content: section.content,
-                instruction: `Strategy: ${strategy}. Target Words: ~${sectionTarget}. Action: Rewrite fully.`,
-            });
-            // نرجع النتيجة المحسنة
-            return { id: section.id, content: result.improvedContent };
+            // نستخدم نفس الدالة الموجودة في السيرفر (bulk_improve)
+            // السيرفر مجهز ليستقبل مصفوفة، لذا سيعمل فوراً
+            const result = await this.callBackend('bulk_improve', { sections: batchSections });
+            return result; // يعيد كائن { id: content, id2: content }
         } catch (e) {
-            console.error(`Error improving section ${section.title}`, e);
-            // في حال فشل قسم واحد، نعيد النص الأصلي حتى لا تخرب السيرة كاملة
-            return { id: section.id, content: section.content }; 
+            console.error("Batch failed", e);
+            // في حال فشل حزمة، نعيد المحتوى القديم للأقسام التي فيها حتى لا تختفي
+            const fallback: Record<string, string> = {};
+            batchSections.forEach(s => fallback[s.id] = s.content);
+            return fallback;
         }
     });
 
-    // د) انتظار جميع الطلبات حتى تكتمل
+    // 3. تجميع النتائج من جميع الحزم
     const results = await Promise.all(promises);
     
-    // هـ) تجميع النتائج في كائن واحد
-    const mapping: Record<string, string> = {};
-    results.forEach(r => mapping[r.id] = r.content);
+    const finalMapping: Record<string, string> = {};
+    results.forEach(chunkResult => {
+        Object.assign(finalMapping, chunkResult);
+    });
     
-    return mapping;
+    return finalMapping;
   }
 
-  // ============================================================
-  // 3. تحسين قسم واحد (Improve Single Section)
-  // ============================================================
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
     return await this.callBackend('improve', { title, content });
   }
 
-  // ============================================================
-  // 4. مطابقة الوظيفة (Job Match)
-  // ============================================================
   async matchJobDescription(resumeText: string, sections: any[], jd: string): Promise<JobMatchResult> {
     const data = await this.callBackend('match', { resume: resumeText, jd });
-    
     return {
       matchingKeywords: data.matchedCoreKeywords || [],
       missingKeywords: data.missingCoreKeywords || [],
