@@ -4,13 +4,13 @@ const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
-// ✅ التعديل الحاسم: استخدام الموديل السريع جداً لتفادي Vercel Timeout
-// هذا الموديل ذكي بما يكفي لفهم التعليمات، وسريع جداً لإنهاء المهمة في ثوانٍ
+// ✅ الموديل السريع (لا يسبب Timeout)
 const MODEL_NAME = 'llama-3.1-8b-instant';
 
 // ==========================================
-// 1. 🛠️ Helpers
+// 1. 🛠️ Helpers & Smart Formatter
 // ==========================================
+
 function cleanAndParseJSON(text) {
   if (!text) return { error: "Empty response" };
   try {
@@ -22,8 +22,57 @@ function cleanAndParseJSON(text) {
     }
     return JSON.parse(cleanText);
   } catch (e) {
-    return { error: "Failed to parse JSON", raw: text };
+    console.error("JSON Parse Error:", e);
+    return { error: "Failed to parse JSON" };
   }
+}
+
+// 🔥 السحر هنا: دالة تحويل الكائنات والمصفوفات إلى HTML جميل
+function formatContentToHTML(content) {
+  // 1. إذا كان النص فارغاً أو نصاً عادياً، أرجعه كما هو
+  if (!content) return "";
+  if (typeof content === 'string') return content;
+
+  // 2. إذا كان مصفوفة (Array) -> حولها إلى قائمة منقطة <ul>
+  if (Array.isArray(content)) {
+    const listItems = content.map(item => {
+      // إذا كان العنصر داخل المصفوفة كائناً (مثلاً وظيفة لها عنوان وتاريخ)
+      if (typeof item === 'object') {
+        const title = item.title || item.role || item.position || item.name || "";
+        const date = item.date || item.duration || "";
+        const desc = item.description || item.responsibilities || item.details || "";
+        
+        // تنسيق الوظيفة: العنوان (التاريخ) <br> التفاصيل
+        let itemHtml = `<strong>${title}</strong> ${date ? `(${date})` : ""}`;
+        
+        // إذا التفاصيل مصفوفة أخرى
+        if (Array.isArray(desc)) {
+             itemHtml += `<ul>${desc.map(d => `<li>${d}</li>`).join('')}</ul>`;
+        } else if (desc) {
+             itemHtml += `<p>${desc}</p>`;
+        }
+        return `<li>${itemHtml}</li>`;
+      }
+      // إذا كان نصاً عادياً (مهارة مثلاً)
+      return `<li>${item}</li>`;
+    }).join('');
+    return `<ul>${listItems}</ul>`;
+  }
+
+  // 3. إذا كان كائناً (Object) -> (مثل المعلومات الشخصية)
+  if (typeof content === 'object') {
+    return Object.entries(content)
+      .map(([key, value]) => {
+         // تجاهل المفاتيح غير المهمة
+         if (key === 'id' || key === 'type') return '';
+         // تحويل المفتاح لاسم جميل (firstName -> First Name)
+         const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+         return `<div><strong>${label}:</strong> ${value}</div>`;
+      })
+      .join('');
+  }
+
+  return String(content);
 }
 
 function normalizeAnalysisData(data) {
@@ -38,84 +87,80 @@ function normalizeAnalysisData(data) {
 }
 
 function calculateATSScore(data) {
-  const flags = data?.parsingFlags || {};
-  if (flags.isGraphic || flags.hasColumns || flags.hasTables) return 35;
-  let penalty = 0;
-  if (!flags.hasStandardSectionHeaders) penalty += 20;
-  if (flags.contactInfoInHeader) penalty += 15;
-  const metrics = data?.metrics || {};
-  const totalBullets = Math.max(metrics.totalBulletPoints || 1, 1);
-  const bulletsWithMetrics = metrics.bulletsWithMetrics || 0;
-  const impactScore = (Math.min(bulletsWithMetrics / totalBullets, 0.4) / 0.4) * 40;
-  const sections = data?.structuredSections?.map((s) => s.title.toLowerCase()) || [];
-  let structurePoints = 0;
-  if (sections.some((s) => s.includes('experience') || s.includes('work'))) structurePoints += 5;
-  if (sections.some((s) => s.includes('education'))) structurePoints += 5;
-  if (sections.some((s) => s.includes('skill'))) structurePoints += 5;
-  const formattingScore = 10; 
-  return Math.round(Math.min(100, impactScore + structurePoints + formattingScore - penalty));
+    // (دالة السكور كما هي...)
+    const flags = data?.parsingFlags || {};
+    if (flags.isGraphic || flags.hasColumns || flags.hasTables) return 35;
+    let penalty = 0;
+    if (!flags.hasStandardSectionHeaders) penalty += 20;
+    if (flags.contactInfoInHeader) penalty += 15;
+    const metrics = data?.metrics || {};
+    const totalBullets = Math.max(metrics.totalBulletPoints || 1, 1);
+    const bulletsWithMetrics = metrics.bulletsWithMetrics || 0;
+    const impactScore = (Math.min(bulletsWithMetrics / totalBullets, 0.4) / 0.4) * 40;
+    const sections = data?.structuredSections?.map((s) => s.title.toLowerCase()) || [];
+    let structurePoints = 0;
+    if (sections.some((s) => s.includes('experience') || s.includes('work'))) structurePoints += 5;
+    if (sections.some((s) => s.includes('education'))) structurePoints += 5;
+    if (sections.some((s) => s.includes('skill'))) structurePoints += 5;
+    const formattingScore = 10; 
+    return Math.round(Math.min(100, impactScore + structurePoints + formattingScore - penalty));
 }
 
 // ==========================================
-// 🧠 Logic: The User's Super Prompt Handler
+// 🧠 Logic
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
   
-  // 1. حساب الطول الحالي لتوجيه الموديل
-  const currentTotalWords = sections.reduce((acc, s) => acc + s.content.trim().split(/\s+/).length, 0);
+  const currentTotalWords = sections.reduce((acc, s) => acc + (typeof s.content === 'string' ? s.content : JSON.stringify(s.content)).split(/\s+/).length, 0);
   
-  // دمجنا شرط الطول مع الـ Prompt الخاص بك
   let lengthConstraint = "";
   if (currentTotalWords < 350) {
-      lengthConstraint = "Note: The input is short. You MUST EXPAND on the responsibilities and achievements (using industry standards for these roles) to reach a total of 500-700 words.";
+      lengthConstraint = "Input is short. EXPAND responsibilities significantly (aim for 500-700 words total).";
   } else if (currentTotalWords > 800) {
-      lengthConstraint = "Note: The input is too long. Condense strictly to fit within 500-700 words.";
-  } else {
-      lengthConstraint = "Maintain the current length logic (approx 500-700 words).";
+      lengthConstraint = "Input is too long. CONDENSE strictly to fit 500-700 words.";
   }
 
-  // 2. الـ Prompt الخاص بك (مع تعديلات تقنية طفيفة للمخرجات)
   const prompt = `
-    ROLE: You are a professional ATS resume writer and hiring expert.
+    ROLE: Professional ATS Resume Writer.
     
-    TASK: Extract, rewrite, and optimize the provided CV sections into a strong, clean, and ATS-compatible resume.
+    TASK: Rewrite resume sections to be ATS-optimized HTML.
     
-    🚨 STRICT RULES (DO NOT IGNORE):
-    - Do NOT invent or add any new experience, skills, certifications, or facts (Zero Hallucination Policy).
-    - Do NOT remove important information.
-    - Improve wording, clarity, structure, and impact only.
-    - Keep all content truthful and based strictly on the input CV.
-    - LANGUAGE: Detect input language. Output in the EXACT SAME language. DO NOT TRANSLATE.
-    
-    PROCESS & QUALITY STANDARDS:
-    1. Tone: Strong, senior-level, results-driven.
-    2. Experience: Use impact-based bullet points starting with strong action verbs. Quantify achievements where possible.
-    3. Formatting: NO Tables, NO Columns. Return clean HTML tags (<p>, <ul>, <li>, <strong>).
+    🚨 OUTPUT FORMAT RULES (CRITICAL):
+    1. RETURN HTML STRINGS ONLY. Do NOT return JSON objects or Arrays inside the content.
+    2. USE: <ul>, <li>, <p>, <strong> tags.
+    3. Experience & Skills: MUST be formatted as <ul><li>Bullet points</li></ul>.
+    4. Personal Info: Format as lines <p><strong>Field:</strong> Value</p>.
+    5. Language: Keep same input language.
     
     ${lengthConstraint}
 
-    INPUT SECTIONS: 
+    INPUT: 
     ${JSON.stringify(sections.map(s => ({ id: s.id, title: s.title, content: s.content })))}
     
-    OUTPUT REQUIREMENTS:
-    - Return a JSON object mapping original IDs to improved HTML content.
-    
     OUTPUT SCHEMA: 
-    { "improvedSections": [ { "id": "original_id", "improvedContent": "HTML String" } ] }
+    { "improvedSections": [ { "id": "input_id", "improvedContent": "HTML String" } ] }
   `;
 
   const completion = await groq.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
     model: MODEL_NAME,
-    temperature: 0.2, // حرارة منخفضة جداً للالتزام بالقواعد الصارمة
+    temperature: 0.2,
     response_format: { type: "json_object" }
   });
 
   const data = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
   
-  let items = data.improvedSections || (Array.isArray(data) ? data : []);
+  // ✅ الخطوة الحاسمة: تنظيف وتنسيق البيانات قبل إرجاعها
+  let items = data.improvedSections || [];
   const mapping = {};
-  items.forEach(item => { if (item.id) mapping[item.id] = item.improvedContent; });
+  
+  items.forEach(item => { 
+      if (item.id) {
+          // نمرر المحتوى عبر "المترجم الذكي" للتأكد أنه HTML وليس Object
+          mapping[item.id] = formatContentToHTML(item.improvedContent); 
+      }
+  });
+  
   return mapping;
 }
 
@@ -123,7 +168,6 @@ async function handleUnifiedATSImprove(sections) {
 // 3. Main Handler
 // ==========================================
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -136,29 +180,24 @@ export default async function handler(req, res) {
   try {
     let result = {};
 
-    // 1. Analyze
     if (action === 'analyze') {
-      const prompt = `ROLE: ATS Scanner. Parse resume to structured JSON. RESUME: ${payload.text.substring(0, 25000)}. OUTPUT: { structuredSections: [{id, title, content}], ... }`;
+      const prompt = `ROLE: ATS Scanner. Parse resume. OUTPUT: { structuredSections: [{id, title, content}], ... }`;
       const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: MODEL_NAME, temperature: 0, response_format: { type: "json_object" } });
       const rawData = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
       result = normalizeAnalysisData(rawData);
       if (!result.error) result.overallScore = calculateATSScore(result);
     } 
     
-    // 2. Bulk Improve (باستخدام الـ Prompt الخاص بك)
     else if (action === 'bulk_improve') {
-       // الموديل السريع يتحمل المصفوفة كاملة بدون مشاكل
        result = await handleUnifiedATSImprove(payload.sections);
     }
     
-    // 3. Improve Single Section
     else if (action === 'improve') {
        const prompt = `Rewrite section "${payload.title}". Content: ${payload.content}. Keep Language. Output JSON: { "professional": "", "atsOptimized": "" }`;
        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: MODEL_NAME, response_format: { type: "json_object" } });
        result = cleanAndParseJSON(completion.choices[0]?.message?.content);
     }
     
-    // 4. Match JD
     else if (action === 'match') {
        const prompt = `Match Resume vs JD. JD: ${payload.jd}. Resume: ${payload.resume}. Output JSON...`;
        const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: MODEL_NAME, response_format: { type: "json_object" } });
