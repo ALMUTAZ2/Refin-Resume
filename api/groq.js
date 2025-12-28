@@ -55,57 +55,48 @@ function calculateATSScore(data) {
 }
 
 // ==========================================
-// 🧠 Logic: Unified Prompt + Length Controller
+// 🧠 Logic: The User's Super Prompt Handler
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
   
-  // 1. حساب الطول الحالي لتحديد الاستراتيجية
+  // 1. حساب الطول الحالي لتوجيه الموديل
   const currentTotalWords = sections.reduce((acc, s) => acc + s.content.trim().split(/\s+/).length, 0);
   
-  let lengthInstruction = "";
-  
-  // إذا كان النص قصيراً (أقل من 350 كلمة)، نطلب التوسع بقوة للوصول لـ 600
+  // دمجنا شرط الطول مع الـ Prompt الخاص بك
+  let lengthConstraint = "";
   if (currentTotalWords < 350) {
-      lengthInstruction = `
-      CRITICAL LENGTH REQUIREMENT: The current resume is too short (${currentTotalWords} words). 
-      You MUST EXPAND the content to reach a TOTAL of 500-700 words.
-      HOW TO EXPAND:
-      - Elaborate heavily on "Experience" and "Projects" sections using the Job Title context.
-      - Add professional details and standard duties for these roles.
-      - Use the 'Star Method' to create detailed bullet points.
-      `;
-  } 
-  // إذا كان النص طويلاً جداً، نطلب الاختصار
-  else if (currentTotalWords > 800) {
-      lengthInstruction = `
-      CRITICAL LENGTH REQUIREMENT: The current resume is too long. 
-      CONDENSE the content to fit within 500-700 words. Focus on impact and remove fluff.
-      `;
-  } 
-  // إذا كان مناسباً، نحافظ عليه
-  else {
-      lengthInstruction = `
-      LENGTH REQUIREMENT: Maintain the current length (approx 500-700 words). Focus on quality.
-      `;
+      lengthConstraint = "Note: The input is short. You MUST EXPAND on the responsibilities and achievements (using industry standards for these roles) to reach a total of 500-700 words.";
+  } else if (currentTotalWords > 800) {
+      lengthConstraint = "Note: The input is too long. Condense strictly to fit within 500-700 words.";
+  } else {
+      lengthConstraint = "Maintain the current length logic (approx 500-700 words).";
   }
 
-  // 2. الـ Prompt الموحد (الخاص بك) + تعليمات الطول واللغة
-  const USER_PROMPT = `Rewrite the following CV sections to be professional, clear, concise, and fully optimized for ATS systems. Ensure each section includes relevant keywords, highlights achievements, uses action verbs, and improves readability. Keep formatting simple for ATS parsing.`;
-
+  // 2. الـ Prompt الخاص بك (مع تعديلات تقنية طفيفة للمخرجات)
   const prompt = `
-    ROLE: Expert ATS Resume Writer.
+    ROLE: You are a professional ATS resume writer and hiring expert.
     
-    CORE TASK: ${USER_PROMPT}
+    TASK: Extract, rewrite, and optimize the provided CV sections into a strong, clean, and ATS-compatible resume.
     
-    ${lengthInstruction}
+    🚨 STRICT RULES (DO NOT IGNORE):
+    - Do NOT invent or add any new experience, skills, certifications, or facts (Zero Hallucination Policy).
+    - Do NOT remove important information.
+    - Improve wording, clarity, structure, and impact only.
+    - Keep all content truthful and based strictly on the input CV.
+    - LANGUAGE: Detect input language. Output in the EXACT SAME language. DO NOT TRANSLATE.
     
-    🚨 STRICT EXECUTION RULES:
-    1. LANGUAGE: Detect input language -> Output SAME language exactly. NO TRANSLATION.
-    2. FACTUALITY: Do NOT invent degrees, dates, or companies. ONLY expand on *descriptions* of roles/skills.
-    3. FORMAT: Return clean HTML strings (<p>, <ul>, <li>, <strong>).
+    PROCESS & QUALITY STANDARDS:
+    1. Tone: Strong, senior-level, results-driven.
+    2. Experience: Use impact-based bullet points starting with strong action verbs. Quantify achievements where possible.
+    3. Formatting: NO Tables, NO Columns. Return clean HTML tags (<p>, <ul>, <li>, <strong>).
     
+    ${lengthConstraint}
+
     INPUT SECTIONS: 
     ${JSON.stringify(sections.map(s => ({ id: s.id, title: s.title, content: s.content })))}
+    
+    OUTPUT REQUIREMENTS:
+    - Return a JSON object mapping original IDs to improved HTML content.
     
     OUTPUT SCHEMA: 
     { "improvedSections": [ { "id": "original_id", "improvedContent": "HTML String" } ] }
@@ -114,7 +105,7 @@ async function handleUnifiedATSImprove(sections) {
   const completion = await groq.chat.completions.create({
     messages: [{ role: "user", content: prompt }],
     model: MODEL_NAME,
-    temperature: 0.3, // حرارة متوسطة للسماح بالتوسع دون هلوسة
+    temperature: 0.2, // حرارة منخفضة جداً للالتزام بالقواعد الصارمة
     response_format: { type: "json_object" }
   });
 
@@ -152,7 +143,7 @@ export default async function handler(req, res) {
       if (!result.error) result.overallScore = calculateATSScore(result);
     } 
     
-    // 2. Bulk Improve (Unified + Length Control)
+    // 2. Bulk Improve (باستخدام الـ Prompt الخاص بك)
     else if (action === 'bulk_improve') {
        result = await handleUnifiedATSImprove(payload.sections);
     }
@@ -178,4 +169,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
-
+ 
