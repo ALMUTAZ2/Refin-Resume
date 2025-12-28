@@ -2,8 +2,10 @@ import Groq from 'groq-sdk';
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
 
-// نستخدم 70B للتحليل (الدقة) و 8B للتحسين (السرعة)
-const ANALYZE_MODEL = 'llama-3.3-70b-versatile';
+// ✅ التغيير الاستراتيجي:
+// Gemma2-9b: ذكي جداً في التحليل (مثل 70B) لكنه سريع (لا يسبب Timeout)
+const ANALYZE_MODEL = 'gemma2-9b-it'; 
+// Llama-8b: طيارة في الكتابة والتحسين
 const IMPROVE_MODEL = 'llama-3.1-8b-instant';
 
 export const config = {
@@ -16,7 +18,6 @@ export const config = {
 
 function countWords(str) {
   if (!str) return 0;
-  // حذف وسوم HTML والرموز لحساب الكلمات الصافية
   const cleanStr = String(str).replace(/<[^>]*>/g, ' ').replace(/[^\w\s]|_/g, "").replace(/\s+/g, " ");
   return cleanStr.trim().split(" ").length;
 }
@@ -66,56 +67,62 @@ function normalizeAnalysisData(data) {
 }
 
 // ==========================================
-// 2. المنطق: التوزيع الرياضي للكلمات
+// 2. المنطق: التوزيع الرياضي للكلمات (Math Logic)
 // ==========================================
 async function handleUnifiedATSImprove(sections) {
   
-  // 1. حساب إجمالي الكلمات في الملف الأصلي
+  // 1. حساب إجمالي الكلمات الحالي
   const totalOriginalWords = sections.reduce((sum, sec) => sum + countWords(sec.content), 0) || 1;
   
-  // 2. تحديد الهدف العام (مثلاً 650 كلمة ليكون في الأمان)
-  const TARGET_TOTAL_WORDS = 650;
+  // 2. الهدف الثابت: 600 كلمة (وسط الـ 500-700)
+  const TARGET_TOTAL_WORDS = 600;
 
   const promises = sections.map(async (section) => {
       const sectionOriginalCount = countWords(section.content);
       
-      // 3. حساب النسبة والهدف لهذا القسم
+      // 3. حساب النسبة المئوية لهذا القسم
       const ratio = sectionOriginalCount / totalOriginalWords;
+      
+      // 4. تحديد عدد الكلمات المطلوب لهذا القسم بناءً على نسبته
       let targetWordCount = Math.round(ratio * TARGET_TOTAL_WORDS);
       
-      // حماية الأقسام الصغيرة جداً (لا تقل عن 40 كلمة)
-      if (targetWordCount < 40) targetWordCount = 40;
-
-      // تحديد نوع التنسيق
+      // *تصحيح*: الأقسام المهمة (الخبرة) نعطيها وزناً إضافياً إذا كانت قصيرة جداً
       const titleLower = section.title.toLowerCase();
+      if ((titleLower.includes('experience') || titleLower.includes('work')) && targetWordCount < 150) {
+          targetWordCount = 200; // الحد الأدنى للخبرة
+      }
+      if (titleLower.includes('summary') && targetWordCount < 50) {
+          targetWordCount = 60; // الحد الأدنى للملخص
+      }
+
       let formattingRule = "Clean HTML strings.";
-      let contentStrategy = `Aim for approximately ${targetWordCount} words.`;
+      let contentStrategy = `Target length: approx ${targetWordCount} words.`;
 
       if (titleLower.includes('personal') || titleLower.includes('contact')) {
           formattingRule = "JSON Object matching keys.";
-          contentStrategy = "Keep exact contact details.";
+          contentStrategy = "Keep details exact.";
       } else if (titleLower.includes('summary')) {
           formattingRule = "Single HTML Paragraph <p>...</p>.";
-          contentStrategy = `Write a comprehensive summary of approx ${targetWordCount} words.`;
+          contentStrategy = `Write a comprehensive summary of around ${targetWordCount} words. Include key achievements.`;
       } else if (titleLower.includes('experience') || titleLower.includes('project')) {
           formattingRule = "HTML List <ul><li>...</li></ul>.";
-          contentStrategy = `EXPAND heavily. Use STAR method. Target length: ~${targetWordCount} words total for this section.`;
-      } else if (titleLower.includes('skill') || titleLower.includes('courses')) {
+          contentStrategy = `EXPAND heavily using STAR method. Aim for ${targetWordCount} words total. Use detailed bullet points.`;
+      } else if (titleLower.includes('skill')) {
           formattingRule = "HTML List <ul><li>...</li></ul>.";
+          contentStrategy = "List technical and soft skills clearly.";
       }
 
       const prompt = `
-        ROLE: Expert ATS Resume Writer.
-        INPUT: "${JSON.stringify(section.content)}"
+        ROLE: Expert Resume Writer.
+        INPUT CONTENT: "${JSON.stringify(section.content)}"
         
-        TASK: Rewrite and optimize this section.
-        TARGET LENGTH: ${contentStrategy}
+        TASK: Rewrite and optimize.
+        GOAL: ${contentStrategy}
         
         RULES:
-        1. **FACTS**: Do NOT invent jobs/dates.
-        2. **LENGTH**: You MUST try to reach the target word count by elaborating on details (how, why, impact).
+        1. **FACTS**: Keep exact companies, dates.
+        2. **LENGTH**: You MUST expand/summarize to meet the target word count.
         3. **FORMAT**: ${formattingRule}
-        4. **LANGUAGE**: Keep input language.
         
         OUTPUT JSON: { "improvedContent": ... }
       `;
@@ -124,12 +131,14 @@ async function handleUnifiedATSImprove(sections) {
           const completion = await groq.chat.completions.create({
               messages: [{ role: "user", content: prompt }],
               model: IMPROVE_MODEL,
-              temperature: 0.2, // قليل من الإبداع للتطويل
+              temperature: 0.2, 
               response_format: { type: "json_object" }
           });
           const data = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
           return { id: section.id, content: forceToHTML(data.improvedContent || section.content) };
       } catch (error) {
+          console.error("Improve Error:", error);
+          // في حال الخطأ نعيد القسم كما هو ولا نوقف السيرفر
           return { id: section.id, content: forceToHTML(section.content) }; 
       }
   });
@@ -145,6 +154,7 @@ async function handleUnifiedATSImprove(sections) {
 // 3. Main Handler
 // ==========================================
 export default async function handler(req, res) {
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
@@ -157,10 +167,12 @@ export default async function handler(req, res) {
     let result = {};
 
     if (action === 'analyze') {
+      // نستخدم Gemma2-9b لأنه سريع جداً وذكي (يحل مشكلة Timeout)
       const prompt = `
-        ROLE: Master Resume Parser.
-        RESUME: ${payload.text.substring(0, 25000)}
-        MANDATORY SECTIONS SEQUENCE:
+        ROLE: Resume Parser.
+        RESUME: ${payload.text.substring(0, 20000)}
+        
+        EXTRACT THESE SECTIONS (If present):
         1. Personal Information (ID: sec_personal)
         2. Professional Summary (ID: sec_summary)
         3. Experience (ID: sec_exp)
@@ -170,15 +182,21 @@ export default async function handler(req, res) {
         7. Languages (ID: sec_lang)
         8. Certifications (ID: sec_cert)
         
-        OUTPUT SCHEMA: { "structuredSections": [{ "id": "...", "title": "...", "content": "..." }] }
+        OUTPUT JSON SCHEMA: { "structuredSections": [{ "id": "...", "title": "...", "content": "..." }] }
       `;
-      const completion = await groq.chat.completions.create({ messages: [{ role: "user", content: prompt }], model: ANALYZE_MODEL, temperature: 0, response_format: { type: "json_object" } });
+      
+      const completion = await groq.chat.completions.create({
+        messages: [{ role: "user", content: prompt }],
+        model: ANALYZE_MODEL, // Gemma 2 (Fast & Smart)
+        temperature: 0,
+        response_format: { type: "json_object" }
+      });
+      
       const rawData = cleanAndParseJSON(completion.choices[0]?.message?.content || "{}");
       result = normalizeAnalysisData(rawData);
     } 
     
     else if (action === 'bulk_improve') {
-        // هنا يتم تطبيق منطق توزيع الكلمات
         result = await handleUnifiedATSImprove(payload.sections);
     }
     
@@ -189,8 +207,11 @@ export default async function handler(req, res) {
     }
 
     res.status(200).json(result);
+
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Backend Error:", error);
+    // إرجاع رسالة خطأ واضحة بدلاً من انهيار السيرفر
+    res.status(500).json({ error: error.message || "Unknown Server Error" });
   }
 }
- 
+
