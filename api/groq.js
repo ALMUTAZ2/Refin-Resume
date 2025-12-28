@@ -44,8 +44,10 @@ function forceToHTML(content) {
     const listItems = content.map(item => {
       // إذا كان العنصر كائناً (وظيفة مثلاً)
       if (typeof item === 'object' && item !== null) {
-        // نجمع كل قيم الكائن في سطر واحد
-        const values = Object.values(item).filter(v => v && typeof v === 'string').join(". ");
+        // نجمع كل قيم الكائن في سطر واحد لتجنب ضياع البيانات
+        const values = Object.values(item)
+            .filter(v => v && typeof v === 'string' || typeof v === 'number')
+            .join(". ");
         return `<li>${values}</li>`;
       }
       return `<li>${String(item)}</li>`;
@@ -57,7 +59,11 @@ function forceToHTML(content) {
   if (typeof content === 'object' && content !== null) {
     return Object.entries(content)
       .map(([key, value]) => {
-          if (key === 'id') return ''; 
+          if (key === 'id' || key === 'type') return ''; 
+          // إذا كانت القيمة مصفوفة داخل الكائن
+          if (Array.isArray(value)) {
+              return `<p><strong>${key}:</strong> <ul>${value.map(v => `<li>${String(v)}</li>`).join('')}</ul></p>`;
+          }
           return `<p><strong>${key}:</strong> ${String(value)}</p>`;
       })
       .join('');
@@ -85,7 +91,6 @@ function normalizeAnalysisData(data) {
 }
 
 function calculateATSScore(data) {
-  // (نفس منطق السكور السابق)
   const flags = data?.parsingFlags || {};
   if (flags.isGraphic || flags.hasColumns || flags.hasTables) return 35;
   let penalty = 0;
@@ -115,17 +120,18 @@ async function handleUnifiedATSImprove(sections) {
       const prompt = `
         ROLE: HTML Content Formatter.
         
-        INPUT DATA:
+        INPUT DATA to Format:
         "${JSON.stringify(section.content)}"
         
         TASK: 
-        Convert the INPUT DATA above into clean HTML format.
+        Convert the INPUT DATA above into clean HTML format suitable for a resume.
         
         🚨 CRITICAL RULES (ZERO TOLERANCE):
         1. **DO NOT INVENT DATA**: Use ONLY the input data provided above. If the input is "Engineer at SEC", do NOT change it to "ABC Corp".
         2. **NO PLACEHOLDERS**: Do NOT write "[Course Name]" or "[Date]". Use exact input.
-        3. **OUTPUT FORMAT**: Return JSON: { "improvedContent": "<ul><li>...</li></ul>" }
+        3. **OUTPUT FORMAT**: Return JSON: { "improvedContent": "<ul><li>...</li></ul>" } or { "improvedContent": "<p>...</p>" }
         4. **LANGUAGE**: Keep exact same language as input.
+        5. **ARRAYS**: Transform arrays into <ul><li>Item 1</li><li>Item 2</li></ul>.
       `;
 
       try {
@@ -224,4 +230,4 @@ export default async function handler(req, res) {
     res.status(500).json({ error: error.message });
   }
 }
- 
+
