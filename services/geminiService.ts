@@ -1,8 +1,12 @@
+
 import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent } from "../types";
 
 export class GeminiService {
   
-  // دالة الاتصال الموحدة بالسيرفر
+  /**
+   * دالة مساعدة للاتصال بالسيرفر
+   * تتعامل مع الأخطاء وتعيد البيانات بصيغة JSON
+   */
   private async callBackend(action: string, payload: any): Promise<any> {
     try {
       const response = await fetch('/api/groq', {
@@ -11,53 +15,78 @@ export class GeminiService {
         body: JSON.stringify({ action, payload })
       });
 
+      // إذا حدث خطأ في الشبكة أو السيرفر
       if (!response.ok) {
-        throw new Error(`Server Error: ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Server Error (${response.status}): ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      
+      // التحقق من وجود خطأ منطقي مرجع من الـ API
+      if (data.error === true) {
+         console.warn(`API returned logic warning for action: ${action}`);
+         return {}; // إرجاع كائن فارغ لتجنب توقف التطبيق
+      }
+
+      return data;
     } catch (error) {
-      console.error(`Failed to call backend for ${action}:`, error);
+      console.error(`GeminiService Error [${action}]:`, error);
       throw error;
     }
   }
 
-  // 1. تحليل السيرة الذاتية
+  /**
+   * تحليل السيرة الذاتية
+   * السيرفر يستخدم موديل سريع لاستخراج الأقسام فقط
+   */
   async analyzeResume(text: string): Promise<AnalysisResult> {
+    // نرسل النص للسيرفر
     const data = await this.callBackend('analyze', { text });
+
+    // ندمج البيانات القادمة من السيرفر مع قيم افتراضية
+    // لأن الموديل السريع قد لا يعيد كل التفاصيل (مثل نقاط القوة والضعف)
     return {
-      detectedRole: data.extractedHeadlines?.[0] || "Unknown",
-      parsingFlags: data.parsingFlags || {},
-      hardSkillsFound: data.hardSkillsFound || [],
-      softSkillsFound: data.softSkillsFound || [],
+      detectedRole: "Candidate", // قيمة افتراضية
+      parsingFlags: {},
+      hardSkillsFound: [],
+      softSkillsFound: [],
       missingHardSkills: [],
-      metrics: data.metrics || {},
-      formattingIssues: data.formattingIssues || [],
+      metrics: {},
+      formattingIssues: [],
       criticalErrors: [],
       strengths: [],
       weaknesses: [],
-      summaryFeedback: data.summaryFeedback || "Done",
-      structuredSections: data.structuredSections || [],
+      summaryFeedback: "Ready for optimization.",
+      structuredSections: data.structuredSections || [], // ✅ الأهم: الأقسام المستخرجة
       overallScore: data.overallScore || 50
     };
   }
 
-  // ============================================================
-  // ✅ التحسين الشامل (دفعة واحدة - One Shot)
-  // متوافق مع الموديل السريع (Llama 8B Instant) في السيرفر
-  // ============================================================
+  /**
+   * التحسين الشامل (Bulk Improve)
+   * السيرفر الآن يتكفل بكل شيء (التكرار، الدفعات، التوسيع)
+   */
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
-    // نرسل الأقسام كلها في طلب واحد، والسيرفر سيعالجها بسرعة البرق
-    // النتيجة تعود ككائن { "id1": "html content", "id2": "html content" }
+    // لا نحتاج لأي منطق هنا، فقط إرسال واستقبال
     return await this.callBackend('bulk_improve', { sections });
   }
 
-  // 3. تحسين قسم واحد (يدوي)
+  /**
+   * تحسين قسم واحد (اختياري)
+   * إذا كنت تستخدمه في واجهتك
+   */
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
-    return await this.callBackend('improve', { title, content });
+    const data = await this.callBackend('improve', { title, content });
+    return {
+        original: content,
+        improved: data.improvedContent || content // fallback to original
+    };
   }
 
-  // 4. مطابقة الوظيفة
+  /**
+   * مطابقة الوظيفة (اختياري)
+   */
   async matchJobDescription(resumeText: string, sections: any[], jd: string): Promise<JobMatchResult> {
     const data = await this.callBackend('match', { resume: resumeText, jd });
     
@@ -70,4 +99,3 @@ export class GeminiService {
     };
   }
 }
- 
