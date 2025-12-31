@@ -3,12 +3,10 @@ import { AnalysisResult, JobMatchResult, ResumeSection, ImprovedContent, Optimiz
 export class GeminiService {
   
   /**
-   * دالة الاتصال الموحدة بالـ Backend
-   * تقوم بإرسال الطلبات إلى ملف handler الذي كتبناه بـ Groq
+   * دالة مركزية للاتصال بالـ Backend (Groq API)
    */
   private async callBackend(action: string, payload: any): Promise<any> {
     try {
-      // نتصل بـ api/groq لأنك نقلت المنطق هناك
       const response = await fetch('/api/groq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -22,9 +20,8 @@ export class GeminiService {
 
       const data = await response.json();
       
-      // التعامل مع الأخطاء المنطقية القادمة من السيرفر
       if (data.error === true) {
-         console.warn(`API Logic Warning for action: ${action}`);
+         console.warn(`API returned logic warning for action: ${action}`);
          return {}; 
       }
 
@@ -35,41 +32,40 @@ export class GeminiService {
     }
   }
 
-  // ================= الوظائف الرئيسية =================
+  // ================= الوظائف =================
 
   /**
-   * 1. تحليل السيرة الذاتية (Audit)
+   * تحليل السيرة الذاتية
    */
   async analyzeResume(text: string): Promise<AnalysisResult> {
     const data = await this.callBackend('analyze', { text });
 
-    // تعبئة البيانات الافتراضية في حال لم يُعد السيرفر بعض الحقول
     return {
-      detectedRole: "Professional", // Groq Parser might not extract role explicitly usually
-      parsingFlags: {
+      detectedRole: data.extractedHeadlines?.[0] || "Professional",
+      parsingFlags: data.parsingFlags || {
         isGraphic: false, hasColumns: false, hasTables: false, hasStandardSectionHeaders: true, contactInfoInHeader: true
       },
-      // البيانات القادمة من الـ Handler
-      structuredSections: data.structuredSections || [],
-      overallScore: data.overallScore || 50,
-      
-      // قيم افتراضية للحقول التي لم يطلبها الـ Prompt المختصر في Groq
-      // (يمكنك توسيع الـ Prompt في السيرفر لاحقاً لملئها)
-      hardSkillsFound: [],
-      softSkillsFound: [],
+      hardSkillsFound: data.hardSkillsFound || [],
+      softSkillsFound: data.softSkillsFound || [],
       missingHardSkills: [],
-      metrics: { totalBulletPoints: 0, bulletsWithMetrics: 0, weakVerbsCount: 0, sectionCount: data.structuredSections?.length || 0 },
-      formattingIssues: [],
-      criticalErrors: [], 
-      strengths: [], 
+      metrics: data.metrics || { 
+        totalBulletPoints: 0, 
+        bulletsWithMetrics: 0, 
+        weakVerbsCount: 0, 
+        sectionCount: data.structuredSections?.length || 0 
+      },
+      formattingIssues: data.formattingIssues || [],
+      criticalErrors: [],
+      strengths: [],
       weaknesses: [],
-      summaryFeedback: "Resume parsed successfully. Ready for optimization."
+      summaryFeedback: data.summaryFeedback || "Ready for optimization.",
+      structuredSections: data.structuredSections || [],
+      overallScore: data.overallScore || 50
     };
   }
 
   /**
-   * 2. تحسين السيرة الذاتية بالكامل (Optimize - الميزة الجديدة)
-   * هذه الدالة تستدعي الـ Action الجديد الذي أضفناه في Groq
+   * ✅ الميزة الجديدة: تحسين السيرة الذاتية بالكامل
    */
   async optimizeResume(resumeText: string): Promise<OptimizedResume> {
     const data = await this.callBackend('optimize', { text: resumeText });
@@ -86,20 +82,18 @@ export class GeminiService {
   }
 
   /**
-   * 3. تحسين مجموعة أقسام (Bulk Improve)
+   * تحسين مجموعة من الأقسام
    */
   async bulkImproveATS(sections: ResumeSection[]): Promise<Record<string, string>> { 
-    // تعيد كائن يحتوي على { id: "new content" }
     return await this.callBackend('bulk_improve', { sections });
   }
 
   /**
-   * 4. تحسين قسم واحد (Improve Single Section)
-   * نستخدم bulk_improve ولكن لقسم واحد فقط للتحايل وتوفير الكود
+   * تحسين قسم واحد
    */
   async improveSection(title: string, content: string): Promise<ImprovedContent> {
-    // نرسلها كأنها قائمة من عنصر واحد
     const mockSection = { id: 'temp_single', title, content };
+    // نستخدم bulk_improve للتحايل وتوفير الكود
     const response = await this.callBackend('bulk_improve', { sections: [mockSection] });
     
     const newContent = response['temp_single'] || content;
@@ -111,17 +105,17 @@ export class GeminiService {
   }
 
   /**
-   * 5. مطابقة الوظيفة (Match Job)
-   * (اختياري: إذا لم تضف هذا في Groq Handler، سيعيد نتيجة فارغة ولن يكسر التطبيق)
+   * مطابقة الوظيفة
+   * ✅ تم التعديل: تقبل الآن 3 مدخلات لحل مشكلة الخطأ في JobMatchModal
    */
-  async matchJobDescription(resumeText: string, jd: string): Promise<JobMatchResult> {
-    // إذا لم تضف "match" في handler السيرفر، هذا الطلب سيعود بـ {}
+  async matchJobDescription(resumeText: string, sections: any[], jd: string): Promise<JobMatchResult> {
+    // ملاحظة: المتغير sections موجود للتوافق مع استدعاء الدالة لكننا نرسل resumeText فقط للسيرفر
     const data = await this.callBackend('match', { resume: resumeText, jd });
     
     return {
       matchingKeywords: data.matchedCoreKeywords || [],
       missingKeywords: data.missingCoreKeywords || [],
-      matchFeedback: data.matchFeedback || "Job matching is currently processing...",
+      matchFeedback: data.matchFeedback || "",
       matchPercentage: data.matchPercentage || 0,
       tailoredSections: []
     };
