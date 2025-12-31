@@ -47,13 +47,16 @@ export interface JobMatchResult {
   tailoredSections?: ResumeSection[]; 
 }
 
-// ✅ تمت الإضافة: واجهة السيرة الذاتية المحسنة بالكامل
+// ✅ التعديل هنا: تمت إضافة email, phone, linkedin لتصحيح الخطأ
 export interface OptimizedResume {
   language: string;
   contactInfo: {
     fullName: string;
     jobTitle: string;
     location: string;
+    email?: string;    // <-- تمت الإضافة
+    phone?: string;    // <-- تمت الإضافة
+    linkedin?: string; // <-- تمت الإضافة
   };
   summary: string;
   skills: string[];
