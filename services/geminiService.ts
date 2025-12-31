@@ -97,10 +97,7 @@ export class GeminiService {
       contactInfo: data.contactInfo || { 
         fullName: "", 
         jobTitle: "", 
-        location: "",
-        email: "",
-        phone: "",
-        linkedin: ""
+        location: ""
       },
       summary: data.summary || "",
       skills: data.skills || [],
