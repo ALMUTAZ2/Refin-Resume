@@ -4,8 +4,7 @@ const groq = new Groq({
   apiKey: process.env.API_KEY,
 });
 
-// إعداد الموديلات:
-// نستخدم 70b للمهام المعقدة (Optimize) لضمان عدم نسيان البيانات
+// إعداد الموديلات
 const FAST_MODEL = "llama-3.1-8b-instant"; 
 const SMART_MODEL = "llama-3.3-70b-versatile"; 
 
@@ -31,14 +30,55 @@ function safeJSON(text) {
   }
 }
 
-// ✅ دالة جديدة لتنظيف البيانات وإصلاح مشكلة [object Object]
+// ✅ دالة التنظيف "الجذرية" (Deep Clean)
+// هذه الدالة تضمن عدم ظهور [object Object] نهائياً
 function sanitizeResumeData(data) {
-  const cleanString = (str) => {
-    if (!str) return "";
-    // إزالة النقاط الزائدة أو الشرطات في بداية النص لتجنب التكرار
-    return String(str).replace(/^[\s•\-\*]+/, "").trim();
+  
+  // دالة تحول أي شيء (نص، رقم، كائن، مصفوفة) إلى نص صافي
+  const cleanString = (val) => {
+    if (val === null || val === undefined) return "";
+    
+    // إذا كان نصاً، نظفه من الرموز في البداية
+    if (typeof val === 'string') {
+      return val.replace(/^[\s•\-\*]+/, "").trim();
+    }
+    
+    // إذا كان رقماً، حوله لنص
+    if (typeof val === 'number') {
+      return String(val);
+    }
+    
+    // 🔥 الحل الجذري: إذا كان كائناً (Object)، ادمج محتوياته في نص واحد
+    if (typeof val === 'object') {
+      return Object.values(val)
+        .map(v => cleanString(v)) // استدعاء تكراري للعمق
+        .filter(v => v.length > 0)
+        .join(". "); 
+    }
+    
+    return String(val);
   };
 
+  // دالة لتنظيف القوائم والمصفوفات
+  const cleanArray = (arr) => {
+    if (!arr) return [];
+    
+    // إذا كان مصفوفة عادية
+    if (Array.isArray(arr)) {
+      return arr.map(cleanString).filter(s => s.length > 0);
+    }
+    
+    // إذا جاءت القائمة على شكل كائن (مثل section1, section2)
+    if (typeof arr === 'object') {
+      return Object.values(arr).map(cleanString).filter(s => s.length > 0);
+    }
+    
+    // إذا كان مجرد نص وحيد
+    const str = cleanString(arr);
+    return str ? [str] : [];
+  };
+
+  // بناء الهيكل النظيف
   return {
     language: data.language || "en",
     contactInfo: {
@@ -47,22 +87,19 @@ function sanitizeResumeData(data) {
       location: cleanString(data.contactInfo?.location),
     },
     summary: cleanString(data.summary),
-    skills: Array.isArray(data.skills) ? data.skills.map(cleanString) : [],
+    
+    skills: cleanArray(data.skills),
+    
     experience: Array.isArray(data.experience) 
       ? data.experience.map(exp => ({
           company: cleanString(exp.company),
           role: cleanString(exp.role),
           period: cleanString(exp.period),
-          // التأكد أن الإنجازات مصفوفة نصوص وليست كائنات
-          achievements: Array.isArray(exp.achievements) 
-            ? exp.achievements.map(a => {
-                // حل مشكلة [object Object]: لو جاء كائن نحوله لنص
-                if (typeof a === 'object') return cleanString(Object.values(a).join(' '));
-                return cleanString(a);
-              })
-            : [cleanString(exp.achievements)] 
+          // تنظيف الإنجازات بقوة
+          achievements: cleanArray(exp.achievements) 
         }))
       : [],
+      
     education: Array.isArray(data.education) 
       ? data.education.map(edu => ({
           degree: cleanString(edu.degree),
@@ -70,10 +107,11 @@ function sanitizeResumeData(data) {
           year: cleanString(edu.year)
         }))
       : [],
+      
     additionalSections: Array.isArray(data.additionalSections)
       ? data.additionalSections.map(sec => ({
           title: cleanString(sec.title),
-          content: Array.isArray(sec.content) ? sec.content.map(cleanString) : [cleanString(sec.content)]
+          content: cleanArray(sec.content)
         }))
       : []
   };
@@ -98,7 +136,7 @@ function forceToHTML(content) {
   return String(content).replace(/^[\s\*\-\•\·]+/, '').trim();
 }
 
-// ================= CORE =================
+// ================= CORE Logic =================
 
 async function improveSectionsSafe(sections) {
   const TARGET = 650;
@@ -159,7 +197,7 @@ async function improveSectionsSafe(sections) {
   return Object.fromEntries(output.map(x => [x.id, x.content]));
 }
 
-// ================= Handler =================
+// ================= HANDLER (Main Export) =================
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -170,7 +208,7 @@ export default async function handler(req, res) {
   const { action, payload } = req.body || {};
 
   try {
-    // 1. تحليل السيرة الذاتية
+    // 1. تحليل السيرة الذاتية (Parser)
     if (action === "analyze") {
       const prompt = `
         ROLE: Resume Parser
@@ -206,7 +244,7 @@ export default async function handler(req, res) {
       return res.status(200).json(result);
     }
 
-    // 3. ✅ تحسين السيرة الذاتية بالكامل (Optimize) - مع التعديلات الجديدة
+    // 3. ✅ تحسين السيرة الذاتية بالكامل (Full Optimize)
     if (action === "optimize") {
         const prompt = `
         You are a Meticulous Resume Architect.
@@ -216,7 +254,7 @@ export default async function handler(req, res) {
         
         ❌ DO NOT summarize multiple roles into one.
         ❌ DO NOT skip older jobs.
-        ❌ DO NOT leave out specific sections like "Languages" or "Volunteering".
+        ❌ DO NOT return Objects inside arrays. All lists must be STRINGS.
         
         TASK:
         1. Analyze the ENTIRE input text.
@@ -228,15 +266,15 @@ export default async function handler(req, res) {
           "language": "en" | "ar",
           "contactInfo": { "fullName": "String", "jobTitle": "String", "location": "String" },
           "summary": "Compelling professional summary (100+ words)",
-          "skills": ["List", "of", "ALL", "hard", "and", "soft", "skills"],
+          "skills": ["String", "String", "String"],
           "experience": [
             { 
               "company": "Company Name", 
               "role": "Job Title", 
               "period": "Date Range", 
               "achievements": [
-                 "Detailed bullet point 1 (STAR method)",
-                 "Detailed bullet point 2 (Quantified metrics)"
+                 "Detailed bullet point 1 (String ONLY)",
+                 "Detailed bullet point 2 (String ONLY)"
               ] 
             }
           ],
@@ -246,7 +284,7 @@ export default async function handler(req, res) {
           "additionalSections": [
             { 
               "title": "Projects / Languages / Certifications / Volunteering", 
-              "content": ["Detail 1", "Detail 2"] 
+              "content": ["String Detail 1", "String Detail 2"] 
             }
           ]
         }
@@ -255,18 +293,18 @@ export default async function handler(req, res) {
         "${payload.text.substring(0, 25000)}" 
         `;
 
-        // نستخدم SMART_MODEL (70b) لأنه أذكى ولا يحذف الأقسام
+        // نستخدم الموديل الذكي 70b
         const r = await groq.chat.completions.create({
             model: SMART_MODEL, 
             messages: [{ role: "user", content: prompt }],
             temperature: 0.2,
-            max_tokens: 6000, // زيادة الحد لضمان عدم انقطاع النص
+            max_tokens: 6000, 
             response_format: { type: "json_object" },
         });
 
         const rawData = safeJSON(r.choices[0]?.message?.content || "");
         
-        // تنظيف البيانات من الأخطاء (object Object) والنقاط الزائدة
+        // 🔥 تطبيق دالة التنظيف القوية قبل الإرجاع
         const cleanData = sanitizeResumeData(rawData);
         
         return res.status(200).json(cleanData);
