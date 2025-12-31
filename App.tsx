@@ -79,6 +79,10 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSectionsUpdate = useCallback((updatedSections: ResumeSection[]) => {
+    setSections(updatedSections);
+  }, []);
+
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-indigo-100">
       <nav className="border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50">
@@ -140,7 +144,12 @@ const App: React.FC = () => {
               <Dashboard result={analysis} onEdit={() => setStep(AppStep.EDITOR)} onOpenMatch={() => setShowMatchModal(true)} onNewScan={handleReset} />
             )}
             {step === AppStep.EDITOR && (
-              <Editor sections={sections} onBack={() => setStep(AppStep.DASHBOARD)} />
+              <Editor 
+                sections={sections} 
+                resumeText={resumeText}
+                onBack={() => setStep(AppStep.DASHBOARD)}
+                onSectionsUpdate={handleSectionsUpdate}
+              />
             )}
           </>
         )}
