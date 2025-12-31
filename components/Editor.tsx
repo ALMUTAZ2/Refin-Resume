@@ -1,76 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { ResumeSection, ImprovedContent, OptimizedResume } from '../types';
-import { Edit3, Sparkles, Download, ArrowLeft, Loader2, RefreshCw, FileText, FileDown, Bold, List, Wand2, AlertTriangle } from 'lucide-react';
+import { ResumeSection, ImprovedContent } from '../types';
+import { Edit3, Sparkles, Download, ArrowLeft, Check, Loader2, X, RefreshCw, FileText, FileDown, Eye, Bold, List, Wand2, AlertTriangle } from 'lucide-react';
 import { ExportService } from '../services/exportService';
 import { GeminiService } from '../services/geminiService';
-
-// --- Helper Functions ---
-const mapOptimizedToSections = (data: OptimizedResume): ResumeSection[] => {
-  const sections: ResumeSection[] = [];
-  
-  // 1. Header & Contact
-  const contactContent = `
-    <div style="text-align:center">
-      <h1>${data.contactInfo.fullName}</h1>
-      <h3>${data.contactInfo.jobTitle}</h3>
-      <p>${[data.contactInfo.location, data.contactInfo.email || '', data.contactInfo.phone || ''].filter(Boolean).join(' | ')}</p>
-    </div>
-  `;
-  sections.push({ id: 'header', title: 'Header', content: contactContent });
-
-  // 2. Summary
-  if (data.summary) {
-    sections.push({ id: 'summary', title: 'Professional Summary', content: `<p>${data.summary}</p>` });
-  }
-
-  // 3. Skills
-  if (data.skills?.length > 0) {
-    const skillsHtml = `<p><strong>Core Competencies:</strong> ${data.skills.join(' • ')}</p>`;
-    sections.push({ id: 'skills', title: 'Skills', content: skillsHtml });
-  }
-
-  // 4. Experience
-  if (data.experience?.length > 0) {
-    let expHtml = '';
-    data.experience.forEach(job => {
-      expHtml += `
-        <div style="margin-bottom: 15px;">
-          <div style="display:flex; justify-content:space-between;">
-            <strong>${job.company}</strong>
-            <em>${job.period}</em>
-          </div>
-          <div><strong>${job.role}</strong></div>
-          <ul>${job.achievements.map(a => `<li>${a}</li>`).join('')}</ul>
-        </div>
-      `;
-    });
-    sections.push({ id: 'experience', title: 'Work Experience', content: expHtml });
-  }
-
-  // 5. Education
-  if (data.education?.length > 0) {
-    let eduHtml = '';
-    data.education.forEach(edu => {
-      eduHtml += `
-        <div style="display:flex; justify-content:space-between;">
-          <div><strong>${edu.degree}</strong>, ${edu.school}</div>
-          <em>${edu.year}</em>
-        </div>
-      `;
-    });
-    sections.push({ id: 'education', title: 'Education', content: eduHtml });
-  }
-
-  // 6. Additional Sections (Languages, etc.)
-  if (data.additionalSections?.length > 0) {
-    data.additionalSections.forEach((sec, idx) => {
-      const contentHtml = `<ul>${sec.content.map(c => `<li>${c}</li>`).join('')}</ul>`;
-      sections.push({ id: `add_${idx}`, title: sec.title, content: contentHtml });
-    });
-  }
-
-  return sections;
-};
 
 const Zap = ({ size, className }: { size: number, className?: string }) => (
   <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
@@ -125,13 +57,15 @@ const MiniRichEditor: React.FC<{
   );
 };
 
+// ✅ Fixed: Added resumeText and onSectionsUpdate props
 interface EditorProps {
   sections: ResumeSection[];
-  resumeText: string; // ✅ Added Prop
+  resumeText: string;
   onBack: () => void;
+  onSectionsUpdate?: (sections: ResumeSection[]) => void;
 }
 
-export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) => {
+export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack, onSectionsUpdate }) => {
   const [currentSections, setCurrentSections] = useState<ResumeSection[]>(sections);
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [globalLoading, setGlobalLoading] = useState(false);
@@ -143,19 +77,24 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
   const [showExportMenu, setShowExportMenu] = useState(false);
 
   useEffect(() => {
-    // Only set initial sections if we haven't modified them yet
-    if (currentSections.length === 0) setCurrentSections(sections);
+    setCurrentSections(sections);
   }, [sections]);
 
   useEffect(() => {
     localStorage.setItem('optimize_count', optimizeCount.toString());
   }, [optimizeCount]);
 
+  // ✅ Notify parent component when sections change
+  useEffect(() => {
+    if (onSectionsUpdate) {
+      onSectionsUpdate(currentSections);
+    }
+  }, [currentSections, onSectionsUpdate]);
+
   const handleUpdate = useCallback((id: string, newContent: string) => {
     setCurrentSections(prev => prev.map(s => s.id === id ? { ...s, content: newContent } : s));
   }, []);
 
-  // ✅ New Logic: Use optimizeResume instead of bulkImprove
   const handleImproveAllATS = async () => {
     if (globalLoading) return;
 
@@ -164,22 +103,21 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
       return;
     }
 
-    if (window.confirm(`جاري الآن إعادة كتابة السيرة الذاتية بالكامل (Full Rewrite). هل أنت متأكد؟`)) {
+    if (window.confirm(`جاري الآن تحويل كافة الأقسام إلى صيغة احترافية تتوافق مع الـ ATS. هل ترغب في البدء؟ (متبقي لك: ${2 - optimizeCount})`)) {
       setGlobalLoading(true);
       try {
         const gemini = new GeminiService();
-        // Call the new powerful endpoint
-        const optimizedData = await gemini.optimizeResume(resumeText);
+        const bulkResults = await gemini.bulkImproveATS(currentSections);
         
-        // Convert the result back to sections for the editor
-        const newSections = mapOptimizedToSections(optimizedData);
+        setCurrentSections(prev => prev.map(section => ({
+          ...section,
+          content: bulkResults[section.id] || section.content
+        })));
         
-        setCurrentSections(newSections);
         setOptimizeCount(prev => prev + 1);
-        alert("✅ تم إعادة بناء السيرة الذاتية بنجاح!");
+        alert("✅ تم تحسين كامل السيرة الذاتية بنجاح!");
       } catch (err: any) {
-        console.error(err);
-        alert("حدث خطأ أثناء الاتصال بالخادم.");
+        alert("حدث خطأ أثناء الاتصال بالخادم. يرجى المحاولة مرة أخرى.");
       } finally {
         setGlobalLoading(false);
       }
@@ -243,7 +181,6 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
         </div>
       </div>
 
-      {/* Main Optimization Banner */}
       <div className="bg-slate-900 rounded-[2.5rem] p-10 text-white flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl relative overflow-hidden border border-white/5">
         <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/20 blur-[100px] pointer-events-none"></div>
         <div className="flex items-center gap-6 relative z-10">
@@ -251,8 +188,8 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
             <Wand2 size={32} className="text-indigo-400" />
           </div>
           <div>
-            <h3 className="text-2xl font-black uppercase tracking-tight">ATS Smart Refine (Full Rewrite)</h3>
-            <p className="text-slate-400 text-sm font-medium">إعادة صياغة كاملة للسيرة الذاتية (بما فيها اللغات والدورات).</p>
+            <h3 className="text-2xl font-black uppercase tracking-tight">ATS Smart Refine</h3>
+            <p className="text-slate-400 text-sm font-medium">تحويل شامل لكافة الأقسام لضمان أعلى نسبة قبول آلي.</p>
             <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-white/5 rounded-full text-[10px] font-black uppercase tracking-widest text-indigo-300">
               <AlertTriangle size={12} className="text-amber-400" /> متبقي لك: {2 - optimizeCount} استخدام
             </div>
@@ -265,7 +202,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
             className={`px-10 py-5 rounded-2xl font-black text-lg transition-all shadow-2xl flex items-center gap-3 active:scale-95 ${optimizeCount >= 2 ? 'bg-slate-700 text-slate-400 cursor-not-allowed shadow-none' : 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-indigo-600/40'}`}
           >
             {globalLoading ? <Loader2 size={24} className="animate-spin" /> : <Zap size={24} className="fill-current" />} 
-            {optimizeCount >= 2 ? 'انتهت المحاولات' : 'Full Optimization'}
+            {optimizeCount >= 2 ? 'انتهت المحاولات' : 'ATS Optimize All'}
           </button>
         </div>
       </div>
@@ -292,7 +229,7 @@ export const Editor: React.FC<EditorProps> = ({ sections, resumeText, onBack }) 
                       disabled={isLoading}
                       className="flex items-center gap-2 px-8 py-3 bg-indigo-50 text-indigo-700 rounded-2xl text-xs font-black hover:bg-indigo-600 hover:text-white transition-all shadow-sm active:scale-95 disabled:opacity-50"
                     >
-                      {isLoading ? <Loader2 size={16} className="animate-spin" /> : <><Sparkles size={16} /> تحسين ذكي (قسم فقط)</>}
+                      {isLoading ? <Loader2 size={16} className="animate-spin" /> : <><Sparkles size={16} /> تحسين ذكي</>}
                     </button>
                   </div>
 
