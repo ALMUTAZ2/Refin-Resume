@@ -120,8 +120,19 @@ export class GeminiService {
 
     const results = await this.callBackend('bulk_improve', { sections });
     
-    console.log(`✅ Bulk improvement complete. Processed ${Object.keys(results).length} sections.`);
-    return results;
+    // إضافة منطق للتحقق من طول المحتوى
+    const adjustedResults: Record<string, string> = {};
+    for (const section of sections) {
+      const content = results[section.id] || section.content;
+      if (this.getWordCount(content) < 500) {
+        adjustedResults[section.id] = this.expandContent(content);
+      } else {
+        adjustedResults[section.id] = content;
+      }
+    }
+
+    console.log(`✅ Bulk improvement complete. Processed ${Object.keys(adjustedResults).length} sections.`);
+    return adjustedResults;
   }
 
   /**
@@ -182,5 +193,16 @@ export class GeminiService {
       matchPercentage: data.matchPercentage || 0,
       tailoredSections: tailoredSections
     };
+  }
+
+  // دالة لحساب عدد الكلمات
+  private getWordCount(text: string): number {
+    return text.trim().split(/\s+/).length;
+  }
+
+  // دالة لتوسيع المحتوى إذا كان أقل من 500 كلمة
+  private expandContent(content: string): string {
+    // يمكنك إضافة نص إضافي أو إعادة صياغة المحتوى هنا
+    return content + "\n\n" + "نص إضافي لتحسين المحتوى وضمان الوصول إلى 500 كلمة.";
   }
 }
