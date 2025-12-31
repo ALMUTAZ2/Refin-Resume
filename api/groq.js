@@ -1,7 +1,9 @@
 import Groq from "groq-sdk";
 
 const groq = new Groq({ apiKey: process.env.API_KEY });
+// نستخدم الموديل الذكي للمهام المعقدة
 const SMART_MODEL = "llama-3.3-70b-versatile"; 
+const FAST_MODEL = "llama-3.1-8b-instant";
 
 export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
 
@@ -15,19 +17,22 @@ function safeJSON(text) {
     if (a !== -1 && b !== -1) t = t.substring(a, b + 1);
     return JSON.parse(t);
   } catch (e) {
-    console.error("❌ JSON PARSING FAILED:", e); // طباعة خطأ التحليل
-    return null; // نرجع null لنعرف أن هناك خطأ
+    console.error("❌ JSON PARSING FAILED:", e);
+    return null;
   }
 }
 
+// 🔥 دالة التنظيف العميق (The Savior)
+// تمنع [object Object] وتضمن استخراج النصوص من أي هيكل
 function sanitizeResumeData(data) {
-  if (!data) return {}; // حماية من البيانات الفارغة
+  if (!data) return {};
 
   const extractText = (val) => {
     if (val === null || val === undefined) return "";
     if (typeof val === 'string') return val.replace(/^[\s•\-\*]+/, "").trim();
     if (typeof val === 'number') return String(val);
     if (Array.isArray(val)) return val.map(extractText).join(". ");
+    // تفكيك الكائنات المتداخلة
     if (typeof val === 'object') return Object.values(val).map(v => extractText(v)).filter(v => v).join(", ");
     return String(val);
   };
@@ -61,6 +66,7 @@ function sanitizeResumeData(data) {
       school: extractText(edu.school),
       year: extractText(edu.year)
     })) : [],
+    // ✅ ضمان وجود الأقسام الإضافية
     additionalSections: Array.isArray(data.additionalSections) ? data.additionalSections.map(sec => ({
       title: extractText(sec.title),
       content: flattenList(sec.content)
@@ -71,7 +77,6 @@ function sanitizeResumeData(data) {
 // ================= HANDLER =================
 
 export default async function handler(req, res) {
-  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -80,67 +85,68 @@ export default async function handler(req, res) {
   const { action, payload } = req.body || {};
 
   try {
-    if (action === "optimize") {
-        
-        // 🔍 1. فحص النص الواصل
-        console.log("🔥 [DEBUG] Received Text Length:", payload.text?.length);
-        console.log("🔥 [DEBUG] Text Preview (First 200 chars):", payload.text?.substring(0, 200));
+    // 1. Analyze
+    if (action === "analyze") {
+      const prompt = `ROLE: Resume Parser. TEXT: ${payload.text.substring(0, 15000)}. OUTPUT JSON: { "structuredSections": [] }`;
+      const r = await groq.chat.completions.create({ model: FAST_MODEL, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } });
+      const data = safeJSON(r.choices[0]?.message?.content || "");
+      return res.status(200).json({ structuredSections: data.structuredSections || [], overallScore: 50 });
+    }
 
-        if (!payload.text || payload.text.length < 50) {
-            console.error("❌ [ERROR] Text is too short or empty!");
-            return res.status(400).json({ error: true, message: "Resume text is empty or failed to extract." });
+    // 2. Bulk Improve (Legacy support)
+    if (action === "bulk_improve") {
+       // Keep simple or return empty if handled by optimize
+       return res.status(200).json({});
+    }
+
+    // 3. ✅ Optimize (الحل الكامل)
+    if (action === "optimize") {
+        if (!payload.text || payload.text.length < 10) {
+            return res.status(400).json({ error: true, message: "No text provided" });
         }
 
         const prompt = `
-        You are a Resume Architect.
+        You are an Elite Resume Architect.
         INPUT TEXT: "${payload.text.substring(0, 30000)}"
         
-        TASK: Extract all data into this JSON structure. 
-        CRITICAL: Do NOT skip any section (Languages, Courses, Projects).
+        🔴 MISSION: 
+        1. Extract & Rewrite the resume to be ATS-Optimized.
+        2. **CAPTURE ALL SECTIONS**: Look for Training, Languages, Certifications, Volunteering. Do NOT skip them.
+        3. **FLATTEN DATA**: No nested objects in arrays. Use Strings only.
         
-        JSON OUTPUT:
+        STRICT JSON OUTPUT:
         {
-          "language": "en",
+          "language": "en" | "ar",
           "contactInfo": { "fullName": "", "jobTitle": "", "location": "", "email": "", "phone": "" },
-          "summary": "",
-          "skills": [],
-          "experience": [{ "company": "", "role": "", "period": "", "achievements": [] }],
+          "summary": "Professional summary...",
+          "skills": ["Skill 1", "Skill 2"],
+          "experience": [{ "company": "", "role": "", "period": "", "achievements": ["Bullet 1", "Bullet 2"] }],
           "education": [{ "degree": "", "school": "", "year": "" }],
-          "additionalSections": [{ "title": "", "content": [] }]
+          "additionalSections": [
+             { "title": "Languages", "content": ["Arabic - Native", "English - Fluent"] },
+             { "title": "Certifications", "content": ["PMP - 2025"] }
+          ]
         }
         `;
 
         const r = await groq.chat.completions.create({
             model: SMART_MODEL, 
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.1, 
+            temperature: 0.2, 
             max_tokens: 7000, 
             response_format: { type: "json_object" },
         });
 
-        // 🔍 2. فحص رد الذكاء الاصطناعي الخام
-        const rawResponse = r.choices[0]?.message?.content || "";
-        console.log("🤖 [DEBUG] Raw AI Response Length:", rawResponse.length);
-        // console.log("🤖 [DEBUG] Raw Content:", rawResponse.substring(0, 500)); // Uncomment to see content
-
-        const rawData = safeJSON(rawResponse);
-        
-        if (!rawData) {
-             console.error("❌ [ERROR] Failed to parse JSON from AI response");
-             return res.status(500).json({ error: true, message: "AI generated invalid JSON" });
-        }
+        const rawData = safeJSON(r.choices[0]?.message?.content || "");
+        if (!rawData) return res.status(500).json({ error: true });
 
         const cleanData = sanitizeResumeData(rawData);
-        
-        // 🔍 3. فحص البيانات النهائية قبل الإرسال
-        console.log("✅ [DEBUG] Sending Clean Data. Sections found:", cleanData.additionalSections?.length);
-
         return res.status(200).json(cleanData);
     }
 
     return res.status(200).json({});
   } catch (error) {
-    console.error("💥 [FATAL ERROR]:", error);
+    console.error("API Error:", error);
     return res.status(500).json({ error: true, message: error.message });
   }
 }
