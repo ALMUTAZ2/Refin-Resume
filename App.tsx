@@ -17,18 +17,14 @@ const STORAGE_KEYS = {
 };
 
 const App: React.FC = () => {
-  // --- State Management ---
   const [step, setStep] = useState<AppStep>(() => (localStorage.getItem(STORAGE_KEYS.STEP) as AppStep) || AppStep.UPLOAD);
-  
   const [resumeText, setResumeText] = useState(() => localStorage.getItem(STORAGE_KEYS.RESUME_TEXT) || '');
-  
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ANALYSIS);
       return saved ? JSON.parse(saved) : null;
     } catch { return null; }
   });
-  
   const [sections, setSections] = useState<ResumeSection[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.SECTIONS);
@@ -40,7 +36,6 @@ const App: React.FC = () => {
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // --- Effects ---
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.STEP, step);
     localStorage.setItem(STORAGE_KEYS.RESUME_TEXT, resumeText);
@@ -48,22 +43,17 @@ const App: React.FC = () => {
     if (sections.length > 0) localStorage.setItem(STORAGE_KEYS.SECTIONS, JSON.stringify(sections));
   }, [step, resumeText, analysis, sections]);
 
-  // --- Handlers ---
   const handleReset = useCallback(() => {
-    if (window.confirm("العودة لشاشة الرفع للبدء بفحص جديد؟ سيتم فقدان التغييرات غير المحفوظة.")) {
+    if (window.confirm("العودة لشاشة الرفع للبدء بفحص جديد؟")) {
       setStep(AppStep.UPLOAD);
       setAnalysis(null);
       setSections([]);
       setResumeText('');
       setErrorMessage(null);
-      
-      // Clear Storage
       localStorage.removeItem(STORAGE_KEYS.STEP);
       localStorage.removeItem(STORAGE_KEYS.ANALYSIS);
       localStorage.removeItem(STORAGE_KEYS.SECTIONS);
       localStorage.removeItem(STORAGE_KEYS.RESUME_TEXT);
-      localStorage.removeItem('optimize_count'); // Reset optimization count
-      
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, []);
@@ -72,13 +62,10 @@ const App: React.FC = () => {
     setLoading(true);
     setErrorMessage(null);
     try {
-      // 1. Extract Text
       const text = await DocumentService.extractText(file);
-      if (!text || text.length < 50) throw new Error("تعذر استخراج نص كافٍ من الملف. يرجى التأكد أن الملف ليس صورة.");
+      if (!text || text.length < 50) throw new Error("تعذر استخراج نص كافٍ من الملف.");
       
       setResumeText(text);
-
-      // 2. Analyze with Gemini/Groq
       const gemini = new GeminiService();
       const result = await gemini.analyzeResume(text);
       
@@ -86,18 +73,14 @@ const App: React.FC = () => {
       setSections(result.structuredSections);
       setStep(AppStep.DASHBOARD);
     } catch (err: any) { 
-      console.error(err);
-      setErrorMessage(err.message || "حدث خطأ غير متوقع أثناء تحليل الملف.");
+      setErrorMessage(err.message || "حدث خطأ غير متوقع.");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Render ---
   return (
     <div className="min-h-screen flex flex-col bg-slate-50 font-sans selection:bg-indigo-100">
-      
-      {/* Navbar */}
       <nav className="border-b bg-white/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => step !== AppStep.UPLOAD && handleReset()}>
@@ -115,10 +98,7 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* Main Content */}
       <main className="flex-1 max-w-7xl mx-auto px-6 w-full py-10">
-        
-        {/* Error Banner */}
         {errorMessage && (
           <div className="mb-8 p-6 bg-rose-50 border-2 border-rose-100 rounded-[2rem] flex items-center gap-4 animate-in slide-in-from-top-4 duration-300">
             <div className="w-12 h-12 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 shrink-0">
@@ -132,7 +112,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Views Switcher */}
         {loading ? (
           <div className="h-[70vh] flex flex-col items-center justify-center text-center animate-in fade-in duration-500">
             <div className="relative mb-8">
@@ -145,7 +124,6 @@ const App: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Step 1: Upload */}
             {step === AppStep.UPLOAD && (
               <div className="space-y-12 animate-in fade-in zoom-in-95 duration-700">
                 <div className="text-center max-w-2xl mx-auto pt-10">
@@ -158,30 +136,15 @@ const App: React.FC = () => {
                 <FileUploader onUpload={handleUpload} />
               </div>
             )}
-
-            {/* Step 2: Dashboard */}
             {step === AppStep.DASHBOARD && analysis && (
-              <Dashboard 
-                result={analysis} 
-                onEdit={() => setStep(AppStep.EDITOR)} 
-                onOpenMatch={() => setShowMatchModal(true)} 
-                onNewScan={handleReset} 
-              />
+              <Dashboard result={analysis} onEdit={() => setStep(AppStep.EDITOR)} onOpenMatch={() => setShowMatchModal(true)} onNewScan={handleReset} />
             )}
-
-            {/* Step 3: Editor */}
             {step === AppStep.EDITOR && (
-              <Editor 
-                sections={sections} 
-                resumeText={resumeText} // ✅ التعديل المهم هنا: تمرير النص الأصلي للمحرر
-                onBack={() => setStep(AppStep.DASHBOARD)} 
-              />
+              <Editor sections={sections} onBack={() => setStep(AppStep.DASHBOARD)} />
             )}
           </>
         )}
       </main>
-
-      {/* Match Modal */}
       {showMatchModal && (
         <JobMatchModal 
           resumeText={resumeText} 
