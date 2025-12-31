@@ -1,16 +1,9 @@
 import Groq from "groq-sdk";
 
-const groq = new Groq({
-  apiKey: process.env.API_KEY,
-});
-
-// نستخدم الموديل 70b لأنه الوحيد القادر على معالجة النصوص الطويلة دون نسيان
+const groq = new Groq({ apiKey: process.env.API_KEY });
 const SMART_MODEL = "llama-3.3-70b-versatile"; 
-const FAST_MODEL = "llama-3.1-8b-instant";
 
-export const config = {
-  api: { bodyParser: { sizeLimit: "10mb" } },
-};
+export const config = { api: { bodyParser: { sizeLimit: "10mb" } } };
 
 // ================= Helpers =================
 
@@ -21,54 +14,32 @@ function safeJSON(text) {
     const b = t.lastIndexOf("}");
     if (a !== -1 && b !== -1) t = t.substring(a, b + 1);
     return JSON.parse(t);
-  } catch {
-    return {};
+  } catch (e) {
+    console.error("❌ JSON PARSING FAILED:", e); // طباعة خطأ التحليل
+    return null; // نرجع null لنعرف أن هناك خطأ
   }
 }
 
-// 🔥 دالة التنظيف والإنقاذ (The Savior)
-// وظيفتها: استخراج النصوص مهما كانت مخفية داخل كائنات، وضمان عدم ظهور [object Object]
 function sanitizeResumeData(data) {
-  
-  // 1. استخراج النص الصافي
+  if (!data) return {}; // حماية من البيانات الفارغة
+
   const extractText = (val) => {
     if (val === null || val === undefined) return "";
-    
-    if (typeof val === 'string') {
-      return val.replace(/^[\s•\-\*]+/, "").trim(); // إزالة النقاط الزائدة
-    }
-    
+    if (typeof val === 'string') return val.replace(/^[\s•\-\*]+/, "").trim();
     if (typeof val === 'number') return String(val);
-    
-    if (Array.isArray(val)) {
-      return val.map(extractText).join(". ");
-    }
-    
-    if (typeof val === 'object') {
-      // تفكيك الكائن بالكامل وتحويله لنص
-      return Object.values(val)
-        .map(v => extractText(v))
-        .filter(v => v.length > 0)
-        .join(", ");
-    }
-    
+    if (Array.isArray(val)) return val.map(extractText).join(". ");
+    if (typeof val === 'object') return Object.values(val).map(v => extractText(v)).filter(v => v).join(", ");
     return String(val);
   };
 
-  // 2. تسطيح القوائم
   const flattenList = (arr) => {
     if (!arr) return [];
-    if (!Array.isArray(arr)) {
-        const text = extractText(arr);
-        return text ? [text] : [];
-    }
+    if (!Array.isArray(arr)) { const t = extractText(arr); return t ? [t] : []; }
     return arr.map(item => extractText(item)).filter(s => s.length > 0);
   };
 
-  // 3. بناء الهيكل
   return {
     language: data.language || "en",
-    
     contactInfo: {
       fullName: extractText(data.contactInfo?.fullName),
       jobTitle: extractText(data.contactInfo?.jobTitle),
@@ -77,40 +48,30 @@ function sanitizeResumeData(data) {
       phone: extractText(data.contactInfo?.phone),
       linkedin: extractText(data.contactInfo?.linkedin),
     },
-
     summary: extractText(data.summary),
     skills: flattenList(data.skills),
-    
-    experience: Array.isArray(data.experience) 
-      ? data.experience.map(exp => ({
-          company: extractText(exp.company),
-          role: extractText(exp.role),
-          period: extractText(exp.period),
-          achievements: flattenList(exp.achievements) 
-        }))
-      : [],
-      
-    education: Array.isArray(data.education) 
-      ? data.education.map(edu => ({
-          degree: extractText(edu.degree),
-          school: extractText(edu.school),
-          year: extractText(edu.year)
-        }))
-      : [],
-      
-    // ✅ هنا التغيير: نضمن أن الأقسام الإضافية موجودة
-    additionalSections: Array.isArray(data.additionalSections)
-      ? data.additionalSections.map(sec => ({
-          title: extractText(sec.title), // تأكد أن العنوان نص
-          content: flattenList(sec.content) // المحتوى قائمة نصوص
-        }))
-      : []
+    experience: Array.isArray(data.experience) ? data.experience.map(exp => ({
+      company: extractText(exp.company),
+      role: extractText(exp.role),
+      period: extractText(exp.period),
+      achievements: flattenList(exp.achievements) 
+    })) : [],
+    education: Array.isArray(data.education) ? data.education.map(edu => ({
+      degree: extractText(edu.degree),
+      school: extractText(edu.school),
+      year: extractText(edu.year)
+    })) : [],
+    additionalSections: Array.isArray(data.additionalSections) ? data.additionalSections.map(sec => ({
+      title: extractText(sec.title),
+      content: flattenList(sec.content)
+    })) : []
   };
 }
 
 // ================= HANDLER =================
 
 export default async function handler(req, res) {
+  // CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -119,81 +80,67 @@ export default async function handler(req, res) {
   const { action, payload } = req.body || {};
 
   try {
-    // 1. Analyze (سريع)
-    if (action === "analyze") {
-      const prompt = `ROLE: Resume Parser. TEXT: ${payload.text.substring(0, 15000)}. OUTPUT JSON: { "structuredSections": [] }`;
-      const r = await groq.chat.completions.create({ model: FAST_MODEL, messages: [{ role: "user", content: prompt }], response_format: { type: "json_object" } });
-      const data = safeJSON(r.choices[0]?.message?.content || "");
-      return res.status(200).json({ structuredSections: data.structuredSections || [], overallScore: 50 });
-    }
-
-    // 2. Bulk Improve
-    if (action === "bulk_improve") {
-      return res.status(200).json({});
-    }
-
-    // 3. ✅ Optimize (الحل النهائي لمشكلة فقدان الأقسام)
     if (action === "optimize") {
+        
+        // 🔍 1. فحص النص الواصل
+        console.log("🔥 [DEBUG] Received Text Length:", payload.text?.length);
+        console.log("🔥 [DEBUG] Text Preview (First 200 chars):", payload.text?.substring(0, 200));
+
+        if (!payload.text || payload.text.length < 50) {
+            console.error("❌ [ERROR] Text is too short or empty!");
+            return res.status(400).json({ error: true, message: "Resume text is empty or failed to extract." });
+        }
+
         const prompt = `
-        You are a Meticulous Resume Architect.
+        You are a Resume Architect.
+        INPUT TEXT: "${payload.text.substring(0, 30000)}"
         
-        INPUT TEXT:
-        "${payload.text.substring(0, 30000)}"
-
-        🔴 CRITICAL MISSION: **CAPTURE EVERY SINGLE SECTION**.
+        TASK: Extract all data into this JSON structure. 
+        CRITICAL: Do NOT skip any section (Languages, Courses, Projects).
         
-        Scan the text for ANY header that looks like:
-        - "Training" / "Courses" / "Workshops"
-        - "Languages"
-        - "Certifications" / "Accreditations"
-        - "Projects"
-        - "Volunteering"
-        - "Awards" / "Honors"
-        - "Memberships"
-        
-        👉 **RULE**: If you find ANY of these, you MUST create a specific entry in the 'additionalSections' array. DO NOT SKIP THEM.
-        👉 **RULE**: Do NOT return [object Object]. All arrays must contain simple STRINGS.
-        👉 **RULE**: Move "Achievements" into the relevant Experience role.
-
-        STRICT JSON OUTPUT:
+        JSON OUTPUT:
         {
-          "language": "en" | "ar",
-          "contactInfo": { 
-             "fullName": "String", "jobTitle": "String", "location": "String",
-             "email": "String", "phone": "String", "linkedin": "String"
-          },
-          "summary": "String",
-          "skills": ["String", "String"],
-          "experience": [
-            { "company": "String", "role": "String", "period": "String", "achievements": ["String", "String"] }
-          ],
-          "education": [{ "degree": "String", "school": "String", "year": "String" }],
-          "additionalSections": [
-            { "title": "Languages", "content": ["Arabic - Native", "English - Professional"] },
-            { "title": "Training & Courses", "content": ["Course Name (Date)", "Another Course"] },
-            { "title": "Certifications", "content": ["Cert Name (Date)"] }
-            // Add MORE objects here for every other section found!
-          ]
+          "language": "en",
+          "contactInfo": { "fullName": "", "jobTitle": "", "location": "", "email": "", "phone": "" },
+          "summary": "",
+          "skills": [],
+          "experience": [{ "company": "", "role": "", "period": "", "achievements": [] }],
+          "education": [{ "degree": "", "school": "", "year": "" }],
+          "additionalSections": [{ "title": "", "content": [] }]
         }
         `;
 
         const r = await groq.chat.completions.create({
             model: SMART_MODEL, 
             messages: [{ role: "user", content: prompt }],
-            temperature: 0.2, // رفعنا الحرارة قليلاً ليصبح أكثر إبداعاً في التقاط الأقسام غير التقليدية
+            temperature: 0.1, 
             max_tokens: 7000, 
             response_format: { type: "json_object" },
         });
 
-        const rawData = safeJSON(r.choices[0]?.message?.content || "");
+        // 🔍 2. فحص رد الذكاء الاصطناعي الخام
+        const rawResponse = r.choices[0]?.message?.content || "";
+        console.log("🤖 [DEBUG] Raw AI Response Length:", rawResponse.length);
+        // console.log("🤖 [DEBUG] Raw Content:", rawResponse.substring(0, 500)); // Uncomment to see content
+
+        const rawData = safeJSON(rawResponse);
+        
+        if (!rawData) {
+             console.error("❌ [ERROR] Failed to parse JSON from AI response");
+             return res.status(500).json({ error: true, message: "AI generated invalid JSON" });
+        }
+
         const cleanData = sanitizeResumeData(rawData);
         
+        // 🔍 3. فحص البيانات النهائية قبل الإرسال
+        console.log("✅ [DEBUG] Sending Clean Data. Sections found:", cleanData.additionalSections?.length);
+
         return res.status(200).json(cleanData);
     }
 
     return res.status(200).json({});
   } catch (error) {
-    console.error("API Error:", error);
-    return res.status(200).json({ error: true, message: "Server processing failed" });
+    console.error("💥 [FATAL ERROR]:", error);
+    return res.status(500).json({ error: true, message: error.message });
   }
 }
